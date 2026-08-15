@@ -25,7 +25,7 @@ constexpr float TANK_HEIGHT = 0.7f;
 constexpr float BULLET_RADIUS = 0.18f;
 constexpr float BARREL_LENGTH = 1.25f;   // longer than TANK_RADIUS: muzzle can overlap a wall
 constexpr float BULLET_SPEED_NORMAL = 9.5f;
-constexpr float BULLET_SPEED_FAST = 16.0f;
+constexpr float BULLET_SPEED_FAST = BULLET_SPEED_NORMAL * 2.0f;   // TnkGameParam col 38: 6 vs 3
 constexpr float MINE_RADIUS = 0.45f;
 constexpr float MINE_BLAST_RADIUS = 3.2f;
 constexpr float MINE_LIFETIME = 10.0f;
@@ -60,12 +60,12 @@ enum class TankType {
     Player2,
     Player3,
     Player4,
-    EnemyBrown,     // Stationary, 1 bullet, slow, no bounce
+    EnemyBrown,     // Stationary, 1 bullet, 1 ricochet, fires every 5 s
     EnemyAsh,       // Slow wanderer, 1 bullet
     EnemyTeal,      // Slowest mover, fast rocket, fires every 3 s
     EnemyYellow,    // Fast, places mines, flees
     EnemyRed,       // Mobile, 3 bullets, rapid 0.5 s bank shots
-    EnemyGreen,     // Stationary, rapid-fire, 2-bounce ricochets
+    EnemyGreen,     // Stationary, 2 bullets, 2 ricochets, fast shells
     EnemyPurple,    // Mobile assault, 5 bullets, drops mines
     EnemyWhite,     // Invisible stealth assassin, fast bullets
     EnemyBlack      // Elite commander, agile dodging, rockets, mines
@@ -90,10 +90,12 @@ struct TankConfig {
     float shootCooldown;   // seconds between shots, from TnkGameParam.bin col 37 (frames/60)
 };
 
-// Speeds below are TnkGameParam.bin col 23 scaled by 2.5, the factor that maps the
-// player's stored 1.8 onto the 4.5 this build already used. Bullet counts and mine
-// counts already matched the file. Ricochet counts are NOT in that table -- Brown 0
-// and Black 0 come from observed original behaviour, everything else is unchanged.
+// Every stat below comes from TnkGameParam.bin. The record layout is proven by the
+// loader at 0x80269de8 in main.dol: mulli r4,r4,168 then a 21 x 2-word copy, so each
+// tank is 42 words, and lwz/lfs there fix which columns are ints and which are floats.
+//   col 3  mines      col 23 speed (x2.5: the player's stored 1.8 is this build's 4.5)
+//   col 30 bullets    col 34 ricochets      col 37 shot cooldown, in frames at 60 Hz
+//   col 38 bullet speed: 3 normal, 6 for the three rocket tanks -- an exact 2.0 ratio
 
 inline TankConfig GetTankConfig(TankType type) {
     switch (type) {
@@ -107,17 +109,17 @@ inline TankConfig GetTankConfig(TankType type) {
             return { type, "Player 4 (Yellow)", { 230, 200, 40, 255 }, { 30, 30, 30, 255 }, { 250, 220, 60, 255 }, 4.5f, 5.0f, 5, 1, BULLET_SPEED_NORMAL, 2, false, false, 0, 0.10f };
         
         case TankType::EnemyBrown:
-            return { type, "Brown Tank", { 160, 110, 70, 255 }, { 60, 50, 40, 255 }, { 180, 130, 90, 255 }, 0.0f, 2.5f, 1, 0, BULLET_SPEED_NORMAL * 0.85f, 0, false, false, 100, 5.00f };
+            return { type, "Brown Tank", { 160, 110, 70, 255 }, { 60, 50, 40, 255 }, { 180, 130, 90, 255 }, 0.0f, 2.5f, 1, 1, BULLET_SPEED_NORMAL, 0, false, false, 100, 5.00f };
         case TankType::EnemyAsh:
-            return { type, "Ash Tank", { 160, 160, 160, 255 }, { 50, 50, 50, 255 }, { 180, 180, 180, 255 }, 3.0f, 3.0f, 1, 1, BULLET_SPEED_NORMAL * 0.85f, 0, false, false, 200, 3.00f };
+            return { type, "Ash Tank", { 160, 160, 160, 255 }, { 50, 50, 50, 255 }, { 180, 180, 180, 255 }, 3.0f, 3.0f, 1, 1, BULLET_SPEED_NORMAL, 0, false, false, 200, 3.00f };
         case TankType::EnemyTeal:
-            return { type, "Teal Tank", { 40, 190, 190, 255 }, { 30, 60, 60, 255 }, { 60, 210, 210, 255 }, 2.5f, 5.0f, 1, 1, BULLET_SPEED_FAST, 0, true, false, 300, 3.00f };
+            return { type, "Teal Tank", { 40, 190, 190, 255 }, { 30, 60, 60, 255 }, { 60, 210, 210, 255 }, 2.5f, 5.0f, 1, 0, BULLET_SPEED_FAST, 0, true, false, 300, 3.00f };
         case TankType::EnemyYellow:
             return { type, "Yellow Tank", { 230, 210, 50, 255 }, { 60, 60, 20, 255 }, { 250, 230, 70, 255 }, 4.5f, 4.5f, 1, 1, BULLET_SPEED_NORMAL, 4, false, false, 400, 3.00f };
         case TankType::EnemyRed:
-            return { type, "Red Tank", { 210, 50, 50, 255 }, { 50, 20, 20, 255 }, { 230, 70, 70, 255 }, 3.0f, 3.5f, 3, 1, BULLET_SPEED_NORMAL * 1.15f, 0, false, false, 500, 0.50f };
+            return { type, "Red Tank", { 210, 50, 50, 255 }, { 50, 20, 20, 255 }, { 230, 70, 70, 255 }, 3.0f, 3.5f, 3, 1, BULLET_SPEED_NORMAL, 0, false, false, 500, 0.50f };
         case TankType::EnemyGreen:
-            return { type, "Green Tank", { 50, 180, 60, 255 }, { 20, 50, 20, 255 }, { 70, 200, 80, 255 }, 0.0f, 4.0f, 2, 2, BULLET_SPEED_FAST * 1.05f, 0, true, false, 600, 1.00f };
+            return { type, "Green Tank", { 50, 180, 60, 255 }, { 20, 50, 20, 255 }, { 70, 200, 80, 255 }, 0.0f, 4.0f, 2, 2, BULLET_SPEED_FAST, 0, true, false, 600, 1.00f };
         case TankType::EnemyPurple:
             return { type, "Purple Tank", { 170, 60, 200, 255 }, { 40, 20, 50, 255 }, { 190, 80, 220, 255 }, 4.5f, 4.0f, 5, 1, BULLET_SPEED_NORMAL, 2, false, false, 700, 0.50f };
         case TankType::EnemyWhite:

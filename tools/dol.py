@@ -35,16 +35,35 @@ def to_off(vma):
     raise SystemExit("VMA 0x%08x is not in any section" % vma)
 
 
+def _decode(chunk):
+    """Disassemble a byte string, one instruction per 4-byte word.
+
+    mcpu=750 is the Broadway core: without it llvm-mc reads VSX forms that the
+    hardware does not have, swallows 8 bytes for one opcode, and every mnemonic
+    after it is off by a word. Any residual mismatch falls back to per-word
+    decoding so the listing can never silently misalign.
+    """
+    hexs = " ".join("0x%02x" % b for b in chunk)
+    p = subprocess.run(["llvm-mc", "--disassemble", "--triple=powerpc", "--mcpu=750"],
+                       input=hexs, capture_output=True, text=True)
+    lines = [l.strip() for l in p.stdout.splitlines() if l.strip() and not l.startswith("\t.")]
+    if len(lines) == len(chunk) // 4:
+        return lines
+    out = []
+    for i in range(0, len(chunk), 4):
+        q = subprocess.run(["llvm-mc", "--disassemble", "--triple=powerpc", "--mcpu=750"],
+                           input=" ".join("0x%02x" % b for b in chunk[i:i + 4]),
+                           capture_output=True, text=True)
+        got = [l.strip() for l in q.stdout.splitlines() if l.strip() and not l.startswith("\t.")]
+        out.append(got[0] if got else "<bad>")
+    return out
+
+
 def dis(vma, count=40):
     d, off = to_off(vma)
     raw = d[off:off + count * 4]
-    hexs = " ".join("0x%02x" % b for b in raw)
-    p = subprocess.run(["llvm-mc", "--disassemble", "--triple=powerpc"],
-                       input=hexs, capture_output=True, text=True)
-    for i, line in enumerate(l for l in p.stdout.splitlines() if l.strip() and not l.startswith("\t.")):
-        print("%08x  %08x  %s" % (vma + i * 4, struct.unpack_from(">I", raw, i * 4)[0], line.strip()))
-    if p.stderr.strip():
-        print(p.stderr.strip(), file=sys.stderr)
+    for i, line in enumerate(_decode(raw)):
+        print("%08x  %08x  %s" % (vma + i * 4, struct.unpack_from(">I", raw, i * 4)[0], line))
 
 
 def find(kind, value):
