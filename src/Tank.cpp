@@ -53,10 +53,9 @@ void Tank::Respawn(Vector2 spawnPos) {
 }
 
 Vector2 Tank::GetBarrelTip() const {
-    float barrelLength = 1.25f;
     return {
-        m_position.x + std::cos(m_turretAngle) * barrelLength,
-        m_position.y + std::sin(m_turretAngle) * barrelLength
+        m_position.x + std::cos(m_turretAngle) * BARREL_LENGTH,
+        m_position.y + std::sin(m_turretAngle) * BARREL_LENGTH
     };
 }
 
@@ -138,7 +137,7 @@ void Tank::Update(float dt, Level& level, ParticleManager& particles) {
     }
 }
 
-bool Tank::Shoot(BulletManager& bullets, ParticleManager& particles) {
+bool Tank::Shoot(BulletManager& bullets, ParticleManager& particles, const Level& level) {
     if (!m_isAlive || m_shootCooldown > 0.0f) return false;
 
     int activeCount = bullets.CountActiveBulletsForOwner(m_id);
@@ -146,6 +145,18 @@ bool Tank::Shoot(BulletManager& bullets, ParticleManager& particles) {
 
     Vector2 barrelTip = GetBarrelTip();
     Vector2 shootDir = { std::cos(m_turretAngle), std::sin(m_turretAngle) };
+
+    // The barrel (1.25) is longer than the tank radius (0.75), so nose-to-wall the tip
+    // sits inside or past the block and the bullet used to appear on the far side.
+    // Clamp the spawn to just short of whatever the barrel crosses.
+    Vector2 hitPoint, hitNormal;
+    int hitTileX, hitTileY;
+    if (level.Raycast(m_position, shootDir, BARREL_LENGTH, hitPoint, hitNormal, hitTileX, hitTileY, true)) {
+        barrelTip = {
+            hitPoint.x - shootDir.x * (BULLET_RADIUS + 0.02f),
+            hitPoint.y - shootDir.y * (BULLET_RADIUS + 0.02f)
+        };
+    }
 
     bullets.SpawnBullet(
         m_id,

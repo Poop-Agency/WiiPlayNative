@@ -80,13 +80,9 @@ void BulletManager::Update(float dt, Level& level, std::vector<Tank>& tanks, Par
             Vector3 hitPos3D = { hitPoint.x, 0.4f, hitPoint.y };
             Vector3 norm3D = { hitNormal.x, 0.0f, hitNormal.y };
 
-            if (hitTileX >= 0 && hitTileY >= 0 && level.IsDestructible(hitTileX, hitTileY)) {
-                // Destroy cork block
-                level.DestroyBlock(hitTileX, hitTileY);
-                Vector2 blockCenter = level.GridToWorld(hitTileX, hitTileY);
-                particles.AddBlockDebris({ blockCenter.x, 0.5f, blockCenter.y }, { 210, 160, 100, 255 });
-                b.active = false;
-            } else if (b.isRocket) {
+            // Cork blocks survive gunfire in the original -- only a mine blast breaks
+            // them (see MineManager::Explode). Bullets ricochet off cork like any wall.
+            if (b.isRocket) {
                 // Rocket explodes on any impact
                 particles.AddExplosion(hitPos3D, 2.5f);
                 b.active = false;

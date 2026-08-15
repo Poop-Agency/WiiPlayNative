@@ -23,6 +23,7 @@ constexpr float ARENA_HALF_H = ARENA_HEIGHT * 0.5f;
 constexpr float TANK_RADIUS = 0.75f;
 constexpr float TANK_HEIGHT = 0.7f;
 constexpr float BULLET_RADIUS = 0.18f;
+constexpr float BARREL_LENGTH = 1.25f;   // longer than TANK_RADIUS: muzzle can overlap a wall
 constexpr float BULLET_SPEED_NORMAL = 9.5f;
 constexpr float BULLET_SPEED_FAST = 16.0f;
 constexpr float MINE_RADIUS = 0.45f;

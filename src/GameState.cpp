@@ -218,7 +218,7 @@ void GameState::Update(float dt, NetworkManager* network) {
             if (!tank.IsAlive()) continue;
 
             if (tank.shootRequested) {
-                if (tank.Shoot(m_bulletManager, m_particleManager)) {
+                if (tank.Shoot(m_bulletManager, m_particleManager, m_level)) {
                     if (tank.GetConfig().isRocket) {
                         m_audioManager.Play(SoundType::ShootRocket);
                     } else {
