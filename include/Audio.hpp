@@ -57,6 +57,7 @@ public:
 
 private:
     void GenerateProceduralSounds();
+    void LoadTreadSounds();
     void LoadMP3Tracks();
 
     // Sound effects
@@ -75,6 +76,12 @@ private:
     Sound m_sndEngineIdle;
     Sound m_sndEngineDrive;
     bool m_enginePlaying;
+
+    // Ripped tread clatter: 4 clips played round-robin, cadence follows speed
+    Sound m_sndTread[4];
+    bool m_hasTread;
+    int m_treadIdx;
+    float m_treadTimer;
 
     // Raylib Music Streaming
     std::unordered_map<BGMTrack, Music> m_musicTracks;

@@ -5,6 +5,10 @@
 #include <algorithm>
 #include <iostream>
 #include <filesystem>
+#include <string>
+
+// Tread click spacing at full speed: 0.373 s cycle / 4 clips, matching the original mix.
+static constexpr float kTreadInterval = 0.0932f;
 
 // Biquad 2-pole Lowpass Filter for clean, band-limited warm synthesis
 struct BiquadLowpass {
@@ -63,6 +67,10 @@ AudioManager::AudioManager()
     , m_initialized(false)
     , m_hasMp3(false)
     , m_enginePlaying(false)
+    , m_sndTread{}
+    , m_hasTread(false)
+    , m_treadIdx(0)
+    , m_treadTimer(0.0f)
 {
 }
 
@@ -76,6 +84,7 @@ void AudioManager::Init() {
     InitAudioDevice();
     if (IsAudioDeviceReady()) {
         GenerateProceduralSounds();
+        LoadTreadSounds();
         LoadMP3Tracks();
         m_initialized = true;
         std::cout << "Audio Device initialized with pristine, band-limited lowpass audio synthesis." << std::endl;
@@ -168,6 +177,23 @@ void AudioManager::GenerateProceduralSounds() {
     SetSoundVolume(m_sndEngineDrive, 0.16f);
 }
 
+void AudioManager::LoadTreadSounds() {
+    // Tread clatter ripped from rp_Tnk_sound.brsar (RP_TNK_BANK_SE_01 waves 15/14/13/12),
+    // played round-robin. Falls back to the procedural drive hum if the files are missing.
+    m_hasTread = true;
+    for (int i = 0; i < 4; ++i) {
+        std::string path = "assets/sfx/tread_" + std::to_string(i) + ".wav";
+        m_sndTread[i] = LoadSound(path.c_str());
+        if (!IsSoundValid(m_sndTread[i])) {
+            m_hasTread = false;
+        } else {
+            SetSoundVolume(m_sndTread[i], 0.22f);
+        }
+    }
+    m_treadIdx = 0;
+    m_treadTimer = 0.0f;
+}
+
 void AudioManager::LoadMP3Tracks() {
     std::string musicDir = "assets/musique/";
 
@@ -220,6 +246,9 @@ void AudioManager::Close() {
     UnloadSound(m_sndBlockBreak);
     UnloadSound(m_sndEngineIdle);
     UnloadSound(m_sndEngineDrive);
+    for (Sound& s : m_sndTread) {
+        if (IsSoundValid(s)) UnloadSound(s);
+    }
 
     CloseAudioDevice();
     m_initialized = false;
@@ -308,17 +337,30 @@ void AudioManager::UpdateEngineAudio(bool isMoving, float speedRatio, int moving
     if (isMoving) {
         float drivePitch = 0.95f + speedRatio * 0.20f;
         SetSoundPitch(m_sndEngineDrive, drivePitch);
-        SetSoundVolume(m_sndEngineDrive, 0.16f);
+        SetSoundVolume(m_sndEngineDrive, m_hasTread ? 0.09f : 0.16f);
         if (!IsSoundPlaying(m_sndEngineDrive)) {
             PlaySound(m_sndEngineDrive);
         }
 
         SetSoundPitch(m_sndEngineIdle, 1.1f);
         SetSoundVolume(m_sndEngineIdle, 0.05f);
+
+        if (m_hasTread) {
+            // 93 ms between clicks at full speed = the 0.373 s 4-clip cycle of the original.
+            // ponytail: linear inverse scaling, clamped; swap for a curve if slow tanks sound off.
+            float interval = kTreadInterval / std::max(speedRatio, 0.35f);
+            m_treadTimer += GetFrameTime();
+            if (m_treadTimer >= interval) {
+                m_treadTimer = 0.0f;
+                PlaySound(m_sndTread[m_treadIdx]);
+                m_treadIdx = (m_treadIdx + 1) % 4;
+            }
+        }
     } else {
         if (IsSoundPlaying(m_sndEngineDrive)) {
             StopSound(m_sndEngineDrive);
         }
+        m_treadTimer = kTreadInterval;   // next move clicks immediately
         float ambient = std::min(0.14f, 0.08f + movingEnemiesCount * 0.02f);
         SetSoundPitch(m_sndEngineIdle, 0.90f);
         SetSoundVolume(m_sndEngineIdle, ambient);
@@ -329,6 +371,8 @@ void AudioManager::StopEngineAudio() {
     if (m_enginePlaying) {
         StopSound(m_sndEngineIdle);
         StopSound(m_sndEngineDrive);
+        m_treadTimer = kTreadInterval;
+        m_treadIdx = 0;
         m_enginePlaying = false;
     }
 }
