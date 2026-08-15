@@ -6,14 +6,42 @@
 #include <iostream>
 #include <filesystem>
 
-static Sound GenerateFallbackSound(int sampleRate, float duration, auto generator) {
+// Biquad 2-pole Lowpass Filter for clean, band-limited warm synthesis
+struct BiquadLowpass {
+    float b0, b1, b2, a1, a2;
+    float x1 = 0.0f, x2 = 0.0f, y1 = 0.0f, y2 = 0.0f;
+
+    void Init(float cutoff, float sampleRate, float q = 0.707f) {
+        float omega = 2.0f * PI * cutoff / sampleRate;
+        float alpha = std::sin(omega) / (2.0f * q);
+        float cos_w = std::cos(omega);
+
+        float a0 = 1.0f + alpha;
+        b0 = ((1.0f - cos_w) * 0.5f) / a0;
+        b1 = (1.0f - cos_w) / a0;
+        b2 = ((1.0f - cos_w) * 0.5f) / a0;
+        a1 = (-2.0f * cos_w) / a0;
+        a2 = (1.0f - alpha) / a0;
+    }
+
+    float Process(float x) {
+        float y = b0 * x + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
+        x2 = x1;
+        x1 = x;
+        y2 = y1;
+        y1 = y;
+        return y;
+    }
+};
+
+static Sound GenerateFilteredSound(int sampleRate, float duration, auto generator) {
     int totalSamples = static_cast<int>(sampleRate * duration);
     std::vector<short> buffer(totalSamples);
 
     for (int i = 0; i < totalSamples; ++i) {
         float t = float(i) / float(sampleRate);
-        float sample = generator(t, duration);
-        sample = std::clamp(sample, -0.6f, 0.6f);
+        float sample = generator(t, duration, sampleRate);
+        sample = std::clamp(sample, -0.75f, 0.75f);
         buffer[i] = static_cast<short>(sample * 32767.0f);
     }
 
@@ -31,7 +59,7 @@ static Sound GenerateFallbackSound(int sampleRate, float duration, auto generato
 AudioManager::AudioManager()
     : m_currentTrack(BGMTrack::None)
     , m_activeMusic(nullptr)
-    , m_volume(0.48f)
+    , m_volume(0.45f)
     , m_initialized(false)
     , m_hasMp3(false)
     , m_enginePlaying(false)
@@ -47,73 +75,97 @@ void AudioManager::Init() {
 
     InitAudioDevice();
     if (IsAudioDeviceReady()) {
-        std::string sfxDir = "assets/sfx/";
-
-        auto loadOrFallback = [&](const std::string& path, Sound fallback) -> Sound {
-            if (std::filesystem::exists(path)) {
-                Sound s = LoadSound(path.c_str());
-                if (s.frameCount > 0) {
-                    SetSoundVolume(s, 0.42f);
-                    return s;
-                }
-            }
-            SetSoundVolume(fallback, 0.42f);
-            return fallback;
-        };
-
-        // Load normalized, authentic Nintendo Wii Play sound effects
-        m_sndShoot = loadOrFallback(sfxDir + "shoot_1p.wav", GenerateFallbackSound(44100, 0.16f, [](float t, float) {
-            return (std::sin(t * 220.0f * 2.0f * PI) > 0 ? 0.35f : -0.35f) * std::exp(-t * 20.0f);
-        }));
-
-        m_sndRocket = loadOrFallback(sfxDir + "shoot_rocket.wav", GenerateFallbackSound(44100, 0.20f, [](float t, float) {
-            return std::sin(t * 440.0f * 2.0f * PI) * std::exp(-t * 15.0f) * 0.35f;
-        }));
-
-        m_sndRicochet = loadOrFallback(sfxDir + "reflect.wav", GenerateFallbackSound(44100, 0.12f, [](float t, float) {
-            return std::sin(t * 1500.0f * 2.0f * PI) * std::exp(-t * 22.0f) * 0.3f;
-        }));
-
-        m_sndMinePlant = loadOrFallback(sfxDir + "mine_plant.wav", GenerateFallbackSound(44100, 0.09f, [](float t, float) {
-            return std::sin(t * 300.0f * 2.0f * PI) * std::exp(-t * 25.0f) * 0.35f;
-        }));
-
-        m_sndMineBeep = loadOrFallback(sfxDir + "mine_beep.wav", GenerateFallbackSound(44100, 0.05f, [](float t, float) {
-            return std::sin(t * 1000.0f * 2.0f * PI) * std::exp(-t * 40.0f) * 0.25f;
-        }));
-
-        m_sndExplosion = loadOrFallback(sfxDir + "explosion.wav", GenerateFallbackSound(44100, 0.55f, [](float t, float) {
-            return (((rand() % 100) / 50.0f) - 1.0f) * std::exp(-t * 5.0f) * 0.45f;
-        }));
-
-        m_sndBlockBreak = loadOrFallback(sfxDir + "broken.wav", GenerateFallbackSound(44100, 0.25f, [](float t, float) {
-            return (((rand() % 100) / 50.0f) - 1.0f) * std::exp(-t * 16.0f) * 0.4f;
-        }));
-
-        m_sndEngineIdle = loadOrFallback(sfxDir + "engine_idle.wav", GenerateFallbackSound(44100, 1.0f, [](float t, float) {
-            return std::sin(t * 65.0f * 2.0f * PI) * 0.2f;
-        }));
-
-        m_sndEngineDrive = loadOrFallback(sfxDir + "engine_drive.wav", GenerateFallbackSound(44100, 1.0f, [](float t, float) {
-            return std::sin(t * 110.0f * 2.0f * PI) * 0.25f;
-        }));
-
-        m_sndMissionStart = loadOrFallback("assets/musique/Wii Play - Tanks - Start [Wii Play OST].mp3", GenerateFallbackSound(44100, 0.4f, [](float t, float) {
-            return std::sin(t * 523.0f * 2.0f * PI) * std::exp(-t * 5.0f) * 0.4f;
-        }));
-
-        m_sndVictory = loadOrFallback("assets/musique/Wii Play - Tanks - Round End [Wii Play OST].mp3", GenerateFallbackSound(44100, 0.6f, [](float t, float) {
-            return std::sin(t * 659.0f * 2.0f * PI) * std::exp(-t * 3.0f) * 0.4f;
-        }));
-
-        m_sndGameOver = loadOrFallback("assets/musique/Wii Play - Tanks - Round Failed [Wii Play OST].mp3", GenerateFallbackSound(44100, 0.65f, [](float t, float) {
-            return std::sin(t * 311.0f * 2.0f * PI) * std::exp(-t * 4.0f) * 0.4f;
-        }));
-
+        GenerateProceduralSounds();
         LoadMP3Tracks();
         m_initialized = true;
-        std::cout << "Audio Device initialized cleanly without saturation." << std::endl;
+        std::cout << "Audio Device initialized with pristine, band-limited lowpass audio synthesis." << std::endl;
     }
+}
+
+void AudioManager::GenerateProceduralSounds() {
+    int rate = 44100;
+
+    // 1. Normal Shot: Square wave pitch sweep 320 Hz -> 90 Hz with 1800 Hz lowpass noise
+    m_sndShoot = GenerateFilteredSound(rate, 0.16f, [f = BiquadLowpass{}](float t, float, float sr) mutable {
+        if (t == 0.0f) f.Init(1800.0f, sr);
+        float freq = 320.0f * std::pow(90.0f / 320.0f, t / 0.16f);
+        float sq = (std::sin(t * freq * 2.0f * PI) > 0.0f ? 0.35f : -0.35f) * std::exp(-t * 22.0f);
+        float rawNoise = ((rand() % 100) / 50.0f - 1.0f) * 0.45f * std::exp(-t * 28.0f);
+        float filteredNoise = f.Process(rawNoise);
+        return (sq + filteredNoise) * 0.55f;
+    });
+
+    // 2. Rocket Shot: Higher pitch sweep 640 Hz -> 200 Hz with 3000 Hz lowpass noise
+    m_sndRocket = GenerateFilteredSound(rate, 0.12f, [f = BiquadLowpass{}](float t, float, float sr) mutable {
+        if (t == 0.0f) f.Init(3000.0f, sr);
+        float freq = 640.0f * std::pow(200.0f / 640.0f, t / 0.12f);
+        float sq = (std::sin(t * freq * 2.0f * PI) > 0.0f ? 0.30f : -0.30f) * std::exp(-t * 26.0f);
+        float rawNoise = ((rand() % 100) / 50.0f - 1.0f) * 0.35f * std::exp(-t * 32.0f);
+        float filteredNoise = f.Process(rawNoise);
+        return (sq + filteredNoise) * 0.50f;
+    });
+
+    // 3. Ricochet: Pure crystalline ping (1500 Hz Triangle + 2300 Hz Sine)
+    m_sndRicochet = GenerateFilteredSound(rate, 0.12f, [](float t, float, float) {
+        float p1 = (std::asin(std::sin(t * 1500.0f * 2.0f * PI)) / (PI * 0.5f)) * 0.40f * std::exp(-t * 24.0f);
+        float p2 = (t > 0.008f) ? (std::sin((t - 0.008f) * 2300.0f * 2.0f * PI) * 0.25f * std::exp(-(t - 0.008f) * 36.0f)) : 0.0f;
+        return (p1 + p2) * 0.45f;
+    });
+
+    // 4. Mine Plant: Crisp 300 Hz square click
+    m_sndMinePlant = GenerateFilteredSound(rate, 0.09f, [](float t, float, float) {
+        float sq = (std::sin(t * 300.0f * 2.0f * PI) > 0.0f ? 0.40f : -0.40f);
+        return sq * std::exp(-t * 26.0f) * 0.45f;
+    });
+
+    // 5. Mine Beep: Pure 1000 Hz sine ping
+    m_sndMineBeep = GenerateFilteredSound(rate, 0.05f, [](float t, float, float) {
+        return std::sin(t * 1000.0f * 2.0f * PI) * std::exp(-t * 45.0f) * 0.30f;
+    });
+
+    // 6. Explosion: Deep sub-bass boom 160 Hz -> 40 Hz + 800 Hz lowpass rumble
+    m_sndExplosion = GenerateFilteredSound(rate, 0.50f, [f = BiquadLowpass{}](float t, float, float sr) mutable {
+        if (t == 0.0f) f.Init(800.0f, sr);
+        float freq = 160.0f * std::pow(40.0f / 160.0f, t / 0.4f);
+        float boom = std::sin(t * freq * 2.0f * PI) * 0.45f * std::exp(-t * 5.5f);
+        float rawNoise = ((rand() % 100) / 50.0f - 1.0f) * 0.65f * std::exp(-t * 6.0f);
+        float filteredNoise = f.Process(rawNoise);
+        return (boom + filteredNoise) * 0.50f;
+    });
+
+    // 7. Block Break: Snappy cork break with 1200 Hz lowpass
+    m_sndBlockBreak = GenerateFilteredSound(rate, 0.22f, [f = BiquadLowpass{}](float t, float, float sr) mutable {
+        if (t == 0.0f) f.Init(1200.0f, sr);
+        float rawNoise = ((rand() % 100) / 50.0f - 1.0f) * 0.70f * std::exp(-t * 18.0f);
+        float thud = std::sin(t * 140.0f * 2.0f * PI) * 0.35f * std::exp(-t * 22.0f);
+        return (f.Process(rawNoise) + thud) * 0.45f;
+    });
+
+    // 8. Tank Engine Idle: Warm, soft purr (65 Hz + 130 Hz pure sines)
+    m_sndEngineIdle = GenerateFilteredSound(rate, 1.2f, [](float t, float, float) {
+        float h1 = std::sin(t * 65.0f * 2.0f * PI) * 0.35f;
+        float h2 = std::sin(t * 130.0f * 2.0f * PI) * 0.15f;
+        return (h1 + h2) * 0.25f;
+    });
+
+    // 9. Tank Engine Drive: Smooth motor (110 Hz) with gentle tread clicks (20 Hz)
+    m_sndEngineDrive = GenerateFilteredSound(rate, 1.2f, [f = BiquadLowpass{}](float t, float, float sr) mutable {
+        if (t == 0.0f) f.Init(1500.0f, sr);
+        float motor = std::sin(t * 110.0f * 2.0f * PI) * 0.25f;
+        float click = std::pow(std::sin(t * 20.0f * 2.0f * PI), 8.0f) * 0.30f;
+        return (motor + f.Process(click)) * 0.30f;
+    });
+
+    // Set gentle baseline volumes
+    SetSoundVolume(m_sndShoot, 0.40f);
+    SetSoundVolume(m_sndRocket, 0.40f);
+    SetSoundVolume(m_sndRicochet, 0.35f);
+    SetSoundVolume(m_sndMinePlant, 0.35f);
+    SetSoundVolume(m_sndMineBeep, 0.25f);
+    SetSoundVolume(m_sndExplosion, 0.45f);
+    SetSoundVolume(m_sndBlockBreak, 0.35f);
+    SetSoundVolume(m_sndEngineIdle, 0.10f);
+    SetSoundVolume(m_sndEngineDrive, 0.16f);
 }
 
 void AudioManager::LoadMP3Tracks() {
@@ -166,9 +218,6 @@ void AudioManager::Close() {
     UnloadSound(m_sndMineBeep);
     UnloadSound(m_sndExplosion);
     UnloadSound(m_sndBlockBreak);
-    UnloadSound(m_sndMissionStart);
-    UnloadSound(m_sndVictory);
-    UnloadSound(m_sndGameOver);
     UnloadSound(m_sndEngineIdle);
     UnloadSound(m_sndEngineDrive);
 
@@ -237,9 +286,9 @@ void AudioManager::Play(SoundType type) {
         case SoundType::MineBeep:     PlaySound(m_sndMineBeep); break;
         case SoundType::Explosion:    PlaySound(m_sndExplosion); break;
         case SoundType::BlockBreak:   PlaySound(m_sndBlockBreak); break;
-        case SoundType::MissionStart: PlaySound(m_sndMissionStart); break;
-        case SoundType::Victory:      PlaySound(m_sndVictory); break;
-        case SoundType::GameOver:     PlaySound(m_sndGameOver); break;
+        case SoundType::MissionStart: PlayBGM(BGMTrack::MissionIntro); break;
+        case SoundType::Victory:      PlayBGM(BGMTrack::VictoryJingle); break;
+        case SoundType::GameOver:     PlayBGM(BGMTrack::GameOverJingle); break;
         default: break;
     }
 }
@@ -249,7 +298,6 @@ void AudioManager::UpdateEngineAudio(bool isMoving, float speedRatio, int moving
 
     if (!m_enginePlaying) {
         PlaySound(m_sndEngineIdle);
-        SetSoundVolume(m_sndEngineIdle, 0.16f);
         m_enginePlaying = true;
     }
 
@@ -258,20 +306,20 @@ void AudioManager::UpdateEngineAudio(bool isMoving, float speedRatio, int moving
     }
 
     if (isMoving) {
-        float drivePitch = 0.95f + speedRatio * 0.25f;
+        float drivePitch = 0.95f + speedRatio * 0.20f;
         SetSoundPitch(m_sndEngineDrive, drivePitch);
-        SetSoundVolume(m_sndEngineDrive, 0.20f);
+        SetSoundVolume(m_sndEngineDrive, 0.16f);
         if (!IsSoundPlaying(m_sndEngineDrive)) {
             PlaySound(m_sndEngineDrive);
         }
 
         SetSoundPitch(m_sndEngineIdle, 1.1f);
-        SetSoundVolume(m_sndEngineIdle, 0.08f);
+        SetSoundVolume(m_sndEngineIdle, 0.05f);
     } else {
         if (IsSoundPlaying(m_sndEngineDrive)) {
             StopSound(m_sndEngineDrive);
         }
-        float ambient = std::min(0.20f, 0.10f + movingEnemiesCount * 0.04f);
+        float ambient = std::min(0.14f, 0.08f + movingEnemiesCount * 0.02f);
         SetSoundPitch(m_sndEngineIdle, 0.90f);
         SetSoundVolume(m_sndEngineIdle, ambient);
     }
