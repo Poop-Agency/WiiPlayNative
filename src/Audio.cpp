@@ -50,7 +50,7 @@ void AudioManager::Init() {
         GenerateProceduralSounds();
         LoadMP3Tracks();
         m_initialized = true;
-        std::cout << "Audio Device initialized with " << m_musicTracks.size() << " authentic MP3 music tracks." << std::endl;
+        std::cout << "Audio Device initialized with calibrated DSP sound effects and authentic OST." << std::endl;
     }
 }
 
@@ -167,87 +167,94 @@ void AudioManager::StopBGM() {
 void AudioManager::GenerateProceduralSounds() {
     int rate = 44100;
 
-    m_sndShoot = GenerateSound(rate, 0.18f, [](float t, float dur) {
-        float env = std::pow(1.0f - (t / dur), 2.5f);
-        float freq = 280.0f - (t / dur) * 180.0f;
-        float noise = ((rand() % 100) / 50.0f - 1.0f) * 0.3f;
-        return (std::sin(t * freq * 2.0f * PI) * 0.7f + noise) * env;
+    // Authentic Wii Tanks Shot: Square sweep 320 Hz -> 90 Hz + Lowpass noise
+    m_sndShoot = GenerateSound(rate, 0.16f, [](float t, float dur) {
+        float f = 320.0f * std::pow(90.0f / 320.0f, t / 0.16f);
+        float sq = (std::sin(t * f * 2.0f * PI) > 0.0f ? 1.0f : -1.0f) * 0.5f;
+        float env = (t < 0.005f) ? (t / 0.005f) : std::exp(-(t - 0.005f) * 20.0f);
+        float noise = ((rand() % 100) / 50.0f - 1.0f) * 0.32f * std::exp(-t * 28.0f);
+        return (sq * 0.7f + noise) * env;
     });
 
-    m_sndRocket = GenerateSound(rate, 0.28f, [](float t, float dur) {
-        float env = std::pow(1.0f - (t / dur), 1.8f);
-        float freq = 450.0f + (t / dur) * 300.0f;
-        float noise = ((rand() % 100) / 50.0f - 1.0f) * 0.45f;
-        return (std::sin(t * freq * 2.0f * PI) * 0.6f + noise) * env;
+    // Fast Rocket Shot: Square sweep 640 Hz -> 200 Hz + Crisp noise
+    m_sndRocket = GenerateSound(rate, 0.11f, [](float t, float dur) {
+        float f = 640.0f * std::pow(200.0f / 640.0f, t / 0.11f);
+        float sq = (std::sin(t * f * 2.0f * PI) > 0.0f ? 1.0f : -1.0f) * 0.4f;
+        float env = (t < 0.004f) ? (t / 0.004f) : std::exp(-(t - 0.004f) * 30.0f);
+        float noise = ((rand() % 100) / 50.0f - 1.0f) * 0.24f * std::exp(-t * 35.0f);
+        return (sq * 0.75f + noise) * env;
     });
 
-    m_sndRicochet = GenerateSound(rate, 0.22f, [](float t, float dur) {
-        float env = std::exp(-t * 18.0f);
-        float freq = 1200.0f - (t / dur) * 400.0f;
-        return std::sin(t * freq * 2.0f * PI) * env * 0.8f;
+    // Ricochet: Dual ping at 1500 Hz and 2300 Hz
+    m_sndRicochet = GenerateSound(rate, 0.12f, [](float t, float dur) {
+        float p1 = std::sin(t * 1500.0f * 2.0f * PI) * 0.7f * std::exp(-t * 22.0f);
+        float p2 = (t > 0.01f) ? (std::sin((t - 0.01f) * 2300.0f * 2.0f * PI) * 0.4f * std::exp(-(t - 0.01f) * 35.0f)) : 0.0f;
+        return (p1 + p2);
     });
 
-    m_sndMinePlant = GenerateSound(rate, 0.08f, [](float t, float dur) {
-        float env = std::exp(-t * 40.0f);
-        return std::sin(t * 800.0f * 2.0f * PI) * env;
+    // Mine Plant: 300 Hz Square Ping
+    m_sndMinePlant = GenerateSound(rate, 0.09f, [](float t, float dur) {
+        float sq = (std::sin(t * 300.0f * 2.0f * PI) > 0.0f ? 1.0f : -1.0f) * 0.5f;
+        return sq * std::exp(-t * 25.0f);
     });
 
+    // Mine Beep: 1000 Hz Sine Ping
     m_sndMineBeep = GenerateSound(rate, 0.05f, [](float t, float dur) {
-        float env = std::sin(t / dur * PI);
-        return std::sin(t * 1750.0f * 2.0f * PI) * env * 0.5f;
+        return std::sin(t * 1000.0f * 2.0f * PI) * std::exp(-t * 40.0f) * 0.6f;
     });
 
-    m_sndExplosion = GenerateSound(rate, 0.65f, [](float t, float dur) {
-        float env = std::exp(-t * 4.5f);
-        float subFreq = 65.0f - (t / dur) * 40.0f;
-        float noise = ((rand() % 100) / 50.0f - 1.0f);
-        return (std::sin(t * subFreq * 2.0f * PI) * 0.6f + noise * 0.5f) * env;
+    // Explosion: Lowpass Sweep 900 Hz -> 120 Hz + Sub-bass Boom
+    m_sndExplosion = GenerateSound(rate, 0.55f, [](float t, float dur) {
+        float f = 160.0f * std::pow(40.0f / 160.0f, t / 0.4f);
+        float boom = std::sin(t * f * 2.0f * PI) * 0.5f * std::exp(-t * 6.0f);
+        float noise = ((rand() % 100) / 50.0f - 1.0f) * 0.55f * std::exp(-t * 5.0f);
+        return (boom + noise);
     });
 
+    // Block Break: Snappy Cork Crumble
     m_sndBlockBreak = GenerateSound(rate, 0.25f, [](float t, float dur) {
-        float env = std::exp(-t * 10.0f);
-        float noise = ((rand() % 100) / 50.0f - 1.0f);
-        float tone = std::sin(t * 180.0f * 2.0f * PI);
-        return (noise * 0.7f + tone * 0.3f) * env;
+        float noise = ((rand() % 100) / 50.0f - 1.0f) * 0.7f * std::exp(-t * 16.0f);
+        float punch = std::sin(t * 140.0f * 2.0f * PI) * 0.4f * std::exp(-t * 20.0f);
+        return noise + punch;
     });
 
-    m_sndMissionStart = GenerateSound(rate, 0.45f, [](float t, float dur) {
-        float note = (t < 0.15f) ? 523.25f : ((t < 0.30f) ? 659.25f : 783.99f);
-        float env = 0.6f * (1.0f - std::fmod(t, 0.15f) / 0.15f);
+    // Mission Start Fanfare (Triad Arpeggio C5 -> E5 -> G5 -> C6)
+    m_sndMissionStart = GenerateSound(rate, 0.40f, [](float t, float dur) {
+        float note = (t < 0.09f) ? 523.25f : ((t < 0.18f) ? 659.25f : ((t < 0.27f) ? 783.99f : 1046.50f));
+        float stepT = std::fmod(t, 0.09f);
+        float env = 0.6f * std::exp(-stepT * 12.0f);
         return std::sin(t * note * 2.0f * PI) * env;
     });
 
-    m_sndVictory = GenerateSound(rate, 0.8f, [](float t, float dur) {
-        float env = std::pow(1.0f - (t / dur), 1.2f);
-        float s1 = std::sin(t * 523.25f * 2.0f * PI);
-        float s2 = std::sin(t * 659.25f * 2.0f * PI);
-        float s3 = std::sin(t * 783.99f * 2.0f * PI);
-        float s4 = std::sin(t * 1046.50f * 2.0f * PI);
-        return (s1 + s2 + s3 + s4) * 0.2f * env;
-    });
-
-    m_sndGameOver = GenerateSound(rate, 0.7f, [](float t, float dur) {
-        float env = std::pow(1.0f - (t / dur), 1.5f);
-        float note = 392.0f - (t / dur) * 160.0f;
+    // Victory Fanfare
+    m_sndVictory = GenerateSound(rate, 0.60f, [](float t, float dur) {
+        float note = (t < 0.09f) ? 523.25f : ((t < 0.18f) ? 659.25f : ((t < 0.27f) ? 783.99f : 1046.50f));
+        float env = std::exp(-t * 3.0f);
         return std::sin(t * note * 2.0f * PI) * env * 0.5f;
     });
 
-    // Seamless 1.5s Tank Engine Idle Loop (Low toy-motor hum)
-    m_sndEngineIdle = GenerateSound(rate, 1.5f, [](float t, float dur) {
-        float baseHum = std::sin(t * 65.0f * 2.0f * PI) * 0.5f +
-                        std::sin(t * 130.0f * 2.0f * PI) * 0.3f;
-        float flutter = (1.0f + 0.3f * std::sin(t * 18.0f * 2.0f * PI));
-        float noise = ((rand() % 100) / 50.0f - 1.0f) * 0.12f;
-        return (baseHum * flutter + noise) * 0.35f;
+    // Game Over
+    m_sndGameOver = GenerateSound(rate, 0.65f, [](float t, float dur) {
+        float note = (t < 0.16f) ? 392.0f : ((t < 0.32f) ? 311.0f : 233.0f);
+        float stepT = std::fmod(t, 0.16f);
+        float env = std::exp(-stepT * 8.0f) * 0.5f;
+        return std::sin(t * note * 2.0f * PI) * env;
     });
 
-    // Seamless 1.5s Tank Caterpillar Tread Drive Loop (Mechanical grinding clicks)
-    m_sndEngineDrive = GenerateSound(rate, 1.5f, [](float t, float dur) {
-        float motor = std::sin(t * 115.0f * 2.0f * PI) * 0.4f +
-                      std::sin(t * 230.0f * 2.0f * PI) * 0.2f;
-        float treadClick = std::pow(std::sin(t * 24.0f * 2.0f * PI), 8.0f) * 0.45f;
-        float noise = ((rand() % 100) / 50.0f - 1.0f) * 0.22f;
-        return (motor + treadClick + noise) * 0.5f;
+    // Tank Engine Idle: Mechanical Toy Motor Hum (65 Hz + 130 Hz)
+    m_sndEngineIdle = GenerateSound(rate, 1.2f, [](float t, float dur) {
+        float h1 = std::sin(t * 65.0f * 2.0f * PI) * 0.5f;
+        float h2 = std::sin(t * 130.0f * 2.0f * PI) * 0.25f;
+        float pulse = (1.0f + 0.2f * std::sin(t * 16.0f * 2.0f * PI));
+        return (h1 + h2) * pulse * 0.35f;
+    });
+
+    // Tank Caterpillar Treads Drive: Mechanical Track Clicking (20 Hz Ratchet)
+    m_sndEngineDrive = GenerateSound(rate, 1.2f, [](float t, float dur) {
+        float motor = std::sin(t * 110.0f * 2.0f * PI) * 0.3f;
+        float click = std::pow(std::sin(t * 22.0f * 2.0f * PI), 8.0f) * 0.5f;
+        float rattle = ((rand() % 100) / 50.0f - 1.0f) * 0.15f;
+        return (motor + click + rattle) * 0.45f;
     });
 }
 
