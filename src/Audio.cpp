@@ -13,7 +13,7 @@ static Sound GenerateFallbackSound(int sampleRate, float duration, auto generato
     for (int i = 0; i < totalSamples; ++i) {
         float t = float(i) / float(sampleRate);
         float sample = generator(t, duration);
-        sample = std::clamp(sample, -1.0f, 1.0f);
+        sample = std::clamp(sample, -0.6f, 0.6f);
         buffer[i] = static_cast<short>(sample * 32767.0f);
     }
 
@@ -31,7 +31,7 @@ static Sound GenerateFallbackSound(int sampleRate, float duration, auto generato
 AudioManager::AudioManager()
     : m_currentTrack(BGMTrack::None)
     , m_activeMusic(nullptr)
-    , m_volume(0.70f)
+    , m_volume(0.48f)
     , m_initialized(false)
     , m_hasMp3(false)
     , m_enginePlaying(false)
@@ -52,63 +52,67 @@ void AudioManager::Init() {
         auto loadOrFallback = [&](const std::string& path, Sound fallback) -> Sound {
             if (std::filesystem::exists(path)) {
                 Sound s = LoadSound(path.c_str());
-                if (s.frameCount > 0) return s;
+                if (s.frameCount > 0) {
+                    SetSoundVolume(s, 0.42f);
+                    return s;
+                }
             }
+            SetSoundVolume(fallback, 0.42f);
             return fallback;
         };
 
-        // Load authentic Nintendo Wii Play sound effects extracted from rp_Tnk_sound.brsar
+        // Load normalized, authentic Nintendo Wii Play sound effects
         m_sndShoot = loadOrFallback(sfxDir + "shoot_1p.wav", GenerateFallbackSound(44100, 0.16f, [](float t, float) {
-            return (std::sin(t * 220.0f * 2.0f * PI) > 0 ? 0.5f : -0.5f) * std::exp(-t * 20.0f);
+            return (std::sin(t * 220.0f * 2.0f * PI) > 0 ? 0.35f : -0.35f) * std::exp(-t * 20.0f);
         }));
 
         m_sndRocket = loadOrFallback(sfxDir + "shoot_rocket.wav", GenerateFallbackSound(44100, 0.20f, [](float t, float) {
-            return std::sin(t * 440.0f * 2.0f * PI) * std::exp(-t * 15.0f);
+            return std::sin(t * 440.0f * 2.0f * PI) * std::exp(-t * 15.0f) * 0.35f;
         }));
 
         m_sndRicochet = loadOrFallback(sfxDir + "reflect.wav", GenerateFallbackSound(44100, 0.12f, [](float t, float) {
-            return std::sin(t * 1500.0f * 2.0f * PI) * std::exp(-t * 22.0f);
+            return std::sin(t * 1500.0f * 2.0f * PI) * std::exp(-t * 22.0f) * 0.3f;
         }));
 
         m_sndMinePlant = loadOrFallback(sfxDir + "mine_plant.wav", GenerateFallbackSound(44100, 0.09f, [](float t, float) {
-            return std::sin(t * 300.0f * 2.0f * PI) * std::exp(-t * 25.0f);
+            return std::sin(t * 300.0f * 2.0f * PI) * std::exp(-t * 25.0f) * 0.35f;
         }));
 
         m_sndMineBeep = loadOrFallback(sfxDir + "mine_beep.wav", GenerateFallbackSound(44100, 0.05f, [](float t, float) {
-            return std::sin(t * 1000.0f * 2.0f * PI) * std::exp(-t * 40.0f);
+            return std::sin(t * 1000.0f * 2.0f * PI) * std::exp(-t * 40.0f) * 0.25f;
         }));
 
         m_sndExplosion = loadOrFallback(sfxDir + "explosion.wav", GenerateFallbackSound(44100, 0.55f, [](float t, float) {
-            return (((rand() % 100) / 50.0f) - 1.0f) * std::exp(-t * 5.0f);
+            return (((rand() % 100) / 50.0f) - 1.0f) * std::exp(-t * 5.0f) * 0.45f;
         }));
 
         m_sndBlockBreak = loadOrFallback(sfxDir + "broken.wav", GenerateFallbackSound(44100, 0.25f, [](float t, float) {
-            return (((rand() % 100) / 50.0f) - 1.0f) * std::exp(-t * 16.0f);
+            return (((rand() % 100) / 50.0f) - 1.0f) * std::exp(-t * 16.0f) * 0.4f;
         }));
 
-        m_sndEngineIdle = loadOrFallback(sfxDir + "engine_idle.wav", GenerateFallbackSound(44100, 1.2f, [](float t, float) {
-            return std::sin(t * 65.0f * 2.0f * PI) * 0.35f;
+        m_sndEngineIdle = loadOrFallback(sfxDir + "engine_idle.wav", GenerateFallbackSound(44100, 1.0f, [](float t, float) {
+            return std::sin(t * 65.0f * 2.0f * PI) * 0.2f;
         }));
 
-        m_sndEngineDrive = loadOrFallback(sfxDir + "engine_drive.wav", GenerateFallbackSound(44100, 1.2f, [](float t, float) {
-            return std::sin(t * 110.0f * 2.0f * PI) * 0.45f;
+        m_sndEngineDrive = loadOrFallback(sfxDir + "engine_drive.wav", GenerateFallbackSound(44100, 1.0f, [](float t, float) {
+            return std::sin(t * 110.0f * 2.0f * PI) * 0.25f;
         }));
 
         m_sndMissionStart = loadOrFallback("assets/musique/Wii Play - Tanks - Start [Wii Play OST].mp3", GenerateFallbackSound(44100, 0.4f, [](float t, float) {
-            return std::sin(t * 523.0f * 2.0f * PI) * std::exp(-t * 5.0f);
+            return std::sin(t * 523.0f * 2.0f * PI) * std::exp(-t * 5.0f) * 0.4f;
         }));
 
         m_sndVictory = loadOrFallback("assets/musique/Wii Play - Tanks - Round End [Wii Play OST].mp3", GenerateFallbackSound(44100, 0.6f, [](float t, float) {
-            return std::sin(t * 659.0f * 2.0f * PI) * std::exp(-t * 3.0f);
+            return std::sin(t * 659.0f * 2.0f * PI) * std::exp(-t * 3.0f) * 0.4f;
         }));
 
         m_sndGameOver = loadOrFallback("assets/musique/Wii Play - Tanks - Round Failed [Wii Play OST].mp3", GenerateFallbackSound(44100, 0.65f, [](float t, float) {
-            return std::sin(t * 311.0f * 2.0f * PI) * std::exp(-t * 4.0f);
+            return std::sin(t * 311.0f * 2.0f * PI) * std::exp(-t * 4.0f) * 0.4f;
         }));
 
         LoadMP3Tracks();
         m_initialized = true;
-        std::cout << "Audio Device initialized with original Nintendo Wii DSP sound effect WAVs." << std::endl;
+        std::cout << "Audio Device initialized cleanly without saturation." << std::endl;
     }
 }
 
@@ -245,27 +249,31 @@ void AudioManager::UpdateEngineAudio(bool isMoving, float speedRatio, int moving
 
     if (!m_enginePlaying) {
         PlaySound(m_sndEngineIdle);
-        PlaySound(m_sndEngineDrive);
+        SetSoundVolume(m_sndEngineIdle, 0.16f);
         m_enginePlaying = true;
     }
 
-    if (!IsSoundPlaying(m_sndEngineIdle)) PlaySound(m_sndEngineIdle);
-    if (!IsSoundPlaying(m_sndEngineDrive)) PlaySound(m_sndEngineDrive);
+    if (!IsSoundPlaying(m_sndEngineIdle)) {
+        PlaySound(m_sndEngineIdle);
+    }
 
     if (isMoving) {
-        float drivePitch = 0.95f + speedRatio * 0.35f;
+        float drivePitch = 0.95f + speedRatio * 0.25f;
         SetSoundPitch(m_sndEngineDrive, drivePitch);
-        SetSoundVolume(m_sndEngineDrive, 0.45f);
+        SetSoundVolume(m_sndEngineDrive, 0.20f);
+        if (!IsSoundPlaying(m_sndEngineDrive)) {
+            PlaySound(m_sndEngineDrive);
+        }
 
-        SetSoundPitch(m_sndEngineIdle, 1.15f);
-        SetSoundVolume(m_sndEngineIdle, 0.15f);
+        SetSoundPitch(m_sndEngineIdle, 1.1f);
+        SetSoundVolume(m_sndEngineIdle, 0.08f);
     } else {
-        float ambientEnemies = std::min(1.0f, movingEnemiesCount * 0.25f);
+        if (IsSoundPlaying(m_sndEngineDrive)) {
+            StopSound(m_sndEngineDrive);
+        }
+        float ambient = std::min(0.20f, 0.10f + movingEnemiesCount * 0.04f);
         SetSoundPitch(m_sndEngineIdle, 0.90f);
-        SetSoundVolume(m_sndEngineIdle, 0.30f);
-
-        SetSoundPitch(m_sndEngineDrive, 0.90f);
-        SetSoundVolume(m_sndEngineDrive, 0.15f * ambientEnemies);
+        SetSoundVolume(m_sndEngineIdle, ambient);
     }
 }
 
