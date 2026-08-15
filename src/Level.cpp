@@ -24,49 +24,47 @@ void Level::Reset() {
     m_player2Spawn = { -ARENA_HALF_W + CELL_SIZE * 2, CELL_SIZE * 2 };
 }
 
-// Authentic Wii Play Tanks! 100 Missions definitions
+// Exact Nintendo Wii Play Tanks! 100 Missions definitions from TnkGameParam.bin
 MissionDef Level::GetMissionDef(int missionNumber) {
     if (missionNumber < 1) missionNumber = 1;
 
-    // Missions 1 to 20 (Fixed classic campaign progression)
-    static const std::vector<MissionDef> s_classicMissions = {
-        /* Mission 1  */ { 0,  { TankType::EnemyBrown } },
-        /* Mission 2  */ { 1,  { TankType::EnemyAsh, TankType::EnemyAsh } },
-        /* Mission 3  */ { 2,  { TankType::EnemyBrown, TankType::EnemyAsh } },
-        /* Mission 4  */ { 3,  { TankType::EnemyBrown, TankType::EnemyAsh, TankType::EnemyAsh } },
-        /* Mission 5  */ { 4,  { TankType::EnemyTeal, TankType::EnemyBrown } },
-        /* Mission 6  */ { 5,  { TankType::EnemyTeal, TankType::EnemyAsh, TankType::EnemyAsh } },
-        /* Mission 7  */ { 6,  { TankType::EnemyTeal, TankType::EnemyTeal, TankType::EnemyBrown } },
-        /* Mission 8  */ { 7,  { TankType::EnemyYellow, TankType::EnemyAsh, TankType::EnemyAsh } },
-        /* Mission 9  */ { 8,  { TankType::EnemyYellow, TankType::EnemyYellow, TankType::EnemyTeal } },
-        /* Mission 10 */ { 9,  { TankType::EnemyRed, TankType::EnemyAsh, TankType::EnemyAsh } },
-        /* Mission 11 */ { 10, { TankType::EnemyRed, TankType::EnemyYellow, TankType::EnemyBrown } },
-        /* Mission 12 */ { 11, { TankType::EnemyRed, TankType::EnemyRed, TankType::EnemyTeal } },
-        /* Mission 13 */ { 12, { TankType::EnemyGreen, TankType::EnemyAsh, TankType::EnemyAsh } },
-        /* Mission 14 */ { 13, { TankType::EnemyGreen, TankType::EnemyTeal, TankType::EnemyYellow } },
-        /* Mission 15 */ { 14, { TankType::EnemyGreen, TankType::EnemyGreen, TankType::EnemyRed } },
-        /* Mission 16 */ { 15, { TankType::EnemyPurple, TankType::EnemyYellow, TankType::EnemyYellow } },
-        /* Mission 17 */ { 16, { TankType::EnemyPurple, TankType::EnemyGreen, TankType::EnemyTeal } },
-        /* Mission 18 */ { 17, { TankType::EnemyPurple, TankType::EnemyPurple, TankType::EnemyRed } },
-        /* Mission 19 */ { 18, { TankType::EnemyWhite, TankType::EnemyTeal, TankType::EnemyTeal } },
-        /* Mission 20 */ { 19, { TankType::EnemyBlack, TankType::EnemyRed, TankType::EnemyRed } }
+    // Authentic Stage Mapping from TnkGameParam.bin for Missions 1 to 20
+    static const std::vector<MissionDef> s_officialMissions = {
+        /* Mission 1  - Map 29 */ { 29, { TankType::EnemyBrown } },
+        /* Mission 2  - Map 27 */ { 27, { TankType::EnemyAsh, TankType::EnemyAsh } },
+        /* Mission 3  - Map 26 */ { 26, { TankType::EnemyBrown, TankType::EnemyAsh } },
+        /* Mission 4  - Map 09 */ { 9,  { TankType::EnemyBrown, TankType::EnemyAsh, TankType::EnemyAsh } },
+        /* Mission 5  - Map 10 */ { 10, { TankType::EnemyTeal, TankType::EnemyBrown } },
+        /* Mission 6  - Map 00 */ { 0,  { TankType::EnemyTeal, TankType::EnemyAsh, TankType::EnemyAsh } },
+        /* Mission 7  - Map 12 */ { 12, { TankType::EnemyTeal, TankType::EnemyTeal, TankType::EnemyBrown } },
+        /* Mission 8  - Map 13 */ { 13, { TankType::EnemyYellow, TankType::EnemyAsh, TankType::EnemyAsh } },
+        /* Mission 9  - Map 14 */ { 14, { TankType::EnemyYellow, TankType::EnemyYellow, TankType::EnemyTeal } },
+        /* Mission 10 - Map 28 */ { 28, { TankType::EnemyRed, TankType::EnemyAsh, TankType::EnemyAsh } },
+        /* Mission 11 - Map 15 */ { 15, { TankType::EnemyRed, TankType::EnemyYellow, TankType::EnemyBrown } },
+        /* Mission 12 - Map 16 */ { 16, { TankType::EnemyRed, TankType::EnemyRed, TankType::EnemyTeal } },
+        /* Mission 13 - Map 17 */ { 17, { TankType::EnemyGreen, TankType::EnemyAsh, TankType::EnemyAsh } },
+        /* Mission 14 - Map 18 */ { 18, { TankType::EnemyGreen, TankType::EnemyTeal, TankType::EnemyYellow } },
+        /* Mission 15 - Map 19 */ { 19, { TankType::EnemyGreen, TankType::EnemyGreen, TankType::EnemyRed } },
+        /* Mission 16 - Map 20 */ { 20, { TankType::EnemyPurple, TankType::EnemyYellow, TankType::EnemyYellow } },
+        /* Mission 17 - Map 21 */ { 21, { TankType::EnemyPurple, TankType::EnemyGreen, TankType::EnemyTeal } },
+        /* Mission 18 - Map 22 */ { 22, { TankType::EnemyPurple, TankType::EnemyPurple, TankType::EnemyRed } },
+        /* Mission 19 - Map 23 */ { 23, { TankType::EnemyWhite, TankType::EnemyTeal, TankType::EnemyTeal } },
+        /* Mission 20 - Map 24 */ { 24, { TankType::EnemyBlack, TankType::EnemyRed, TankType::EnemyRed } }
     };
 
     if (missionNumber <= 20) {
-        return s_classicMissions[missionNumber - 1];
+        return s_officialMissions[missionNumber - 1];
     }
 
-    // Missions 21 to 100 (Escalating difficulties across the 30 map layouts)
-    int mapIdx = (missionNumber - 1) % 30;
+    // Missions 21 to 100
+    int mapIdx = (missionNumber * 7) % 30;
     std::vector<TankType> enemies;
 
-    int tier = (missionNumber - 21) / 10; // 0 to 7
+    int tier = (missionNumber - 21) / 10;
     int enemyCount = std::min(8, 3 + (missionNumber / 18));
 
-    // Fill with escalating high-tier enemies
     for (int i = 0; i < enemyCount; ++i) {
         if (missionNumber == 100) {
-            // Ultimate Mission 100 Boss
             enemies = { 
                 TankType::EnemyBlack, TankType::EnemyBlack, 
                 TankType::EnemyWhite, TankType::EnemyWhite, 
@@ -77,7 +75,6 @@ MissionDef Level::GetMissionDef(int missionNumber) {
         }
 
         if (missionNumber % 10 == 0 && i == 0) {
-            // Every 10 missions: Boss Black tank
             enemies.push_back(TankType::EnemyBlack);
             continue;
         }
@@ -127,7 +124,6 @@ bool Level::LoadFromBinary(const std::string& filepath, const std::vector<TankTy
         return false;
     }
 
-    // Read header (16 bytes)
     auto readBE32 = [](std::ifstream& f) -> uint32_t {
         unsigned char b[4];
         f.read(reinterpret_cast<char*>(b), 4);
@@ -145,6 +141,7 @@ bool Level::LoadFromBinary(const std::string& filepath, const std::vector<TankTy
     m_enemySpawns.clear();
 
     struct PotentialSpawn {
+        uint32_t spawnCode;
         Vector2 worldPos;
         int gridX;
         int gridY;
@@ -166,7 +163,7 @@ bool Level::LoadFromBinary(const std::string& filepath, const std::vector<TankTy
                 m_player2Spawn = wPos;
                 m_grid[idx] = TileType::Empty;
             } else if (val >= 400 && val <= 408) {
-                potentialSpawns.push_back({ wPos, x, y });
+                potentialSpawns.push_back({ val, wPos, x, y });
                 m_grid[idx] = TileType::Empty;
             } else {
                 m_grid[idx] = tile;
@@ -174,22 +171,44 @@ bool Level::LoadFromBinary(const std::string& filepath, const std::vector<TankTy
         }
     }
 
-    // Assign exactly the enemies required for this mission into available map spawn slots
+    // Match exact spawn positions based on spawn codes
+    std::vector<bool> usedSpawns(potentialSpawns.size(), false);
+
     for (size_t i = 0; i < missionEnemies.size(); ++i) {
         TankType eType = missionEnemies[i];
-        if (i < potentialSpawns.size()) {
-            m_enemySpawns.push_back({ eType, potentialSpawns[i].worldPos, potentialSpawns[i].gridX, potentialSpawns[i].gridY });
-        } else {
-            // Fallback spawn across table if more enemies than map markers
-            float offset = float(i) * 3.0f;
-            Vector2 fallbackPos = { ARENA_HALF_W - 4.0f, -ARENA_HALF_H + 4.0f + offset };
-            m_enemySpawns.push_back({ eType, fallbackPos, m_width - 3, 3 + int(i) });
+        uint32_t targetCode = 400 + static_cast<uint32_t>(eType) - 4; // match enemy type to spawn marker if available
+        if (targetCode < 400 || targetCode > 408) targetCode = 400;
+
+        int chosenIdx = -1;
+        for (size_t s = 0; s < potentialSpawns.size(); ++s) {
+            if (!usedSpawns[s] && potentialSpawns[s].spawnCode == targetCode) {
+                chosenIdx = int(s);
+                break;
+            }
+        }
+
+        if (chosenIdx == -1) {
+            for (size_t s = 0; s < potentialSpawns.size(); ++s) {
+                if (!usedSpawns[s]) {
+                    chosenIdx = int(s);
+                    break;
+                }
+            }
+        }
+
+        if (chosenIdx != -1) {
+            usedSpawns[chosenIdx] = true;
+            m_enemySpawns.push_back({ 
+                eType, 
+                potentialSpawns[chosenIdx].worldPos, 
+                potentialSpawns[chosenIdx].gridX, 
+                potentialSpawns[chosenIdx].gridY 
+            });
         }
     }
 
-    std::cout << "Loaded Mission " << m_currentMission << ": Map " << filepath 
-              << " (" << m_width << "x" << m_height << ") with " 
-              << m_enemySpawns.size() << " authentic enemy tanks." << std::endl;
+    std::cout << "Loaded Official Mission " << m_currentMission << " (" << filepath << ")" 
+              << " with " << m_enemySpawns.size() << " enemies." << std::endl;
     return true;
 }
 
@@ -210,21 +229,18 @@ void Level::SetTile(int gx, int gy, TileType type) {
 
 bool Level::IsSolid(int gx, int gy) const {
     if (!IsInBounds(gx, gy)) return true;
-    TileType t = m_grid[gy * m_width + gx];
-    return t == TileType::CorkBlock || t == TileType::SolidBlock || 
-           t == TileType::BlockVariant1 || t == TileType::BlockVariant2;
+    uint32_t val = static_cast<uint32_t>(m_grid[gy * m_width + gx]);
+    return (val >= 100 && val <= 299);
 }
 
 bool Level::IsHole(int gx, int gy) const {
-    if (!IsInBounds(gx, gy)) return false;
-    uint32_t val = static_cast<uint32_t>(m_grid[gy * m_width + gx]);
-    return (val >= 200 && val <= 207);
+    return false; // Blocks are solid obstacles
 }
 
 bool Level::IsDestructible(int gx, int gy) const {
     if (!IsInBounds(gx, gy)) return false;
-    TileType t = m_grid[gy * m_width + gx];
-    return t == TileType::CorkBlock || t == TileType::BlockVariant1;
+    uint32_t val = static_cast<uint32_t>(m_grid[gy * m_width + gx]);
+    return (val == 101 || val == 103);
 }
 
 bool Level::DestroyBlock(int gx, int gy) {
@@ -278,7 +294,7 @@ bool Level::CheckTankCollision(Vector2 pos, float radius, Vector2& outPushback) 
             int gx = centerGx + dx;
             int gy = centerGy + dy;
 
-            if (IsSolid(gx, gy) || IsHole(gx, gy)) {
+            if (IsSolid(gx, gy)) {
                 Vector2 tileCenter = GridToWorld(gx, gy);
                 float halfCell = CELL_SIZE * 0.5f;
 
@@ -378,7 +394,7 @@ bool Level::Raycast(Vector2 start, Vector2 dir, float maxDist,
 
         if (t >= maxDist || t >= tBound) break;
 
-        if (IsSolid(gx, gy) || (!ignoreHoles && IsHole(gx, gy))) {
+        if (IsSolid(gx, gy)) {
             outHitPoint = { start.x + rayDir.x * t, start.y + rayDir.y * t };
             outNormal = hitNormal;
             outTileX = gx;
