@@ -1,6 +1,9 @@
 #pragma once
 
 #include "Common.hpp"
+#include <string>
+#include <vector>
+#include <unordered_map>
 
 enum class SoundType {
     ShootNormal,
@@ -19,9 +22,18 @@ enum class SoundType {
 enum class BGMTrack {
     None,
     Title,
-    Gameplay,
-    Victory,
-    GameOver
+    MissionIntro,
+    BrownTank,
+    AshTank,
+    TealTank,
+    YellowTank,
+    RedTank,
+    GreenTank,
+    PurpleTank,
+    WhiteTank,
+    BlackTank,
+    VictoryJingle,
+    GameOverJingle
 };
 
 class AudioManager {
@@ -35,12 +47,15 @@ public:
     void Update(float dt);
 
     void PlayBGM(BGMTrack track);
+    void PlayMissionBGM(TankType dominantEnemy);
     void StopBGM();
+    void SetVolume(float vol);
 
 private:
     void GenerateProceduralSounds();
-    void FillAudioBuffer(void* buffer, unsigned int frames);
+    void LoadMP3Tracks();
 
+    // Sound effects
     Sound m_sndShoot;
     Sound m_sndRocket;
     Sound m_sndRicochet;
@@ -52,9 +67,11 @@ private:
     Sound m_sndVictory;
     Sound m_sndGameOver;
 
-    AudioStream m_bgmStream;
-    BGMTrack m_currentBGM;
-    float m_bgmTime;
-    float m_bgmVolume;
+    // Raylib Music Streaming
+    std::unordered_map<BGMTrack, Music> m_musicTracks;
+    BGMTrack m_currentTrack;
+    Music* m_activeMusic;
+    float m_volume;
     bool m_initialized;
+    bool m_hasMp3;
 };

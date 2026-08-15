@@ -81,6 +81,7 @@ private:
     float m_missionTimer;
     float m_stateTimer;
     bool m_missionAnnounced;
+    TankType m_dominantEnemy;
 
     std::vector<PlayerScore> m_playerScores;
 };

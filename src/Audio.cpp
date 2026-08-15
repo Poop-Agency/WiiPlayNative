@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <algorithm>
 #include <iostream>
+#include <filesystem>
 
 static Sound GenerateSound(int sampleRate, float duration, auto generator) {
     int totalSamples = static_cast<int>(sampleRate * duration);
@@ -28,10 +29,11 @@ static Sound GenerateSound(int sampleRate, float duration, auto generator) {
 }
 
 AudioManager::AudioManager()
-    : m_currentBGM(BGMTrack::None)
-    , m_bgmTime(0.0f)
-    , m_bgmVolume(0.55f)
+    : m_currentTrack(BGMTrack::None)
+    , m_activeMusic(nullptr)
+    , m_volume(0.70f)
     , m_initialized(false)
+    , m_hasMp3(false)
 {
 }
 
@@ -45,22 +47,53 @@ void AudioManager::Init() {
     InitAudioDevice();
     if (IsAudioDeviceReady()) {
         GenerateProceduralSounds();
-
-        // Initialize 44.1kHz Stereo BGM Stream
-        SetAudioStreamBufferSizeDefault(4096);
-        m_bgmStream = LoadAudioStream(44100, 16, 2);
-        PlayAudioStream(m_bgmStream);
-
+        LoadMP3Tracks();
         m_initialized = true;
-        std::cout << "Audio device and procedural BGM streamer initialized." << std::endl;
+        std::cout << "Audio Device initialized with " << m_musicTracks.size() << " authentic MP3 music tracks." << std::endl;
     }
+}
+
+void AudioManager::LoadMP3Tracks() {
+    std::string musicDir = "assets/musique/";
+
+    auto tryLoadMusic = [&](BGMTrack track, const std::string& filename) {
+        std::string path = musicDir + filename;
+        if (std::filesystem::exists(path)) {
+            Music m = LoadMusicStream(path.c_str());
+            if (m.stream.buffer != nullptr) {
+                m.looping = (track != BGMTrack::MissionIntro && track != BGMTrack::VictoryJingle && track != BGMTrack::GameOverJingle);
+                SetMusicVolume(m, m_volume);
+                m_musicTracks[track] = m;
+                m_hasMp3 = true;
+            }
+        }
+    };
+
+    tryLoadMusic(BGMTrack::Title, "Wii Tanks Master Mod - Music ⧸ OST  ｜  Complete.mp3");
+    tryLoadMusic(BGMTrack::MissionIntro, "Wii Play - Tanks - Start [Wii Play OST].mp3");
+    tryLoadMusic(BGMTrack::VictoryJingle, "Wii Play - Tanks - Round End [Wii Play OST].mp3");
+    tryLoadMusic(BGMTrack::GameOverJingle, "Wii Play - Tanks - Round Failed [Wii Play OST].mp3");
+
+    tryLoadMusic(BGMTrack::BrownTank, "Wii Play Tanks! Music - Brown Tank.mp3");
+    tryLoadMusic(BGMTrack::AshTank, "Wii Play Tanks! Music - Grey⧸Ash Tank (Variant 1).mp3");
+    tryLoadMusic(BGMTrack::TealTank, "Wii Play Tanks! Music - Teal⧸Marine Tank (Variant 1).mp3");
+    tryLoadMusic(BGMTrack::YellowTank, "Wii Play Tanks! Music - Yellow Tank (Variant 1).mp3");
+    tryLoadMusic(BGMTrack::RedTank, "Wii Play Tanks! Music - Red⧸Pink Tank (Variant 1).mp3");
+    tryLoadMusic(BGMTrack::GreenTank, "Wii Play Tanks! Music - Green Tank (Variant 1).mp3");
+    tryLoadMusic(BGMTrack::PurpleTank, "Wii Play Tanks! Music - Purple⧸Violet Tank (Variant 1).mp3");
+    tryLoadMusic(BGMTrack::WhiteTank, "Wii Play Tanks! Music - White Tank (Variant 1) {REUPLOAD}.mp3");
+    tryLoadMusic(BGMTrack::BlackTank, "Wii Play Tanks! Music - Black Tank.mp3");
 }
 
 void AudioManager::Close() {
     if (!m_initialized) return;
 
-    StopAudioStream(m_bgmStream);
-    UnloadAudioStream(m_bgmStream);
+    StopBGM();
+
+    for (auto& pair : m_musicTracks) {
+        UnloadMusicStream(pair.second);
+    }
+    m_musicTracks.clear();
 
     UnloadSound(m_sndShoot);
     UnloadSound(m_sndRocket);
@@ -77,12 +110,54 @@ void AudioManager::Close() {
     m_initialized = false;
 }
 
+void AudioManager::SetVolume(float vol) {
+    m_volume = std::clamp(vol, 0.0f, 1.0f);
+    if (m_activeMusic) {
+        SetMusicVolume(*m_activeMusic, m_volume);
+    }
+}
+
 void AudioManager::PlayBGM(BGMTrack track) {
-    m_currentBGM = track;
+    if (m_currentTrack == track && m_activeMusic && IsMusicStreamPlaying(*m_activeMusic)) {
+        return;
+    }
+
+    if (m_activeMusic) {
+        StopMusicStream(*m_activeMusic);
+        m_activeMusic = nullptr;
+    }
+
+    m_currentTrack = track;
+
+    auto it = m_musicTracks.find(track);
+    if (it != m_musicTracks.end()) {
+        m_activeMusic = &it->second;
+        SetMusicVolume(*m_activeMusic, m_volume);
+        PlayMusicStream(*m_activeMusic);
+    }
+}
+
+void AudioManager::PlayMissionBGM(TankType dominantEnemy) {
+    switch (dominantEnemy) {
+        case TankType::EnemyBlack:  PlayBGM(BGMTrack::BlackTank); break;
+        case TankType::EnemyWhite:  PlayBGM(BGMTrack::WhiteTank); break;
+        case TankType::EnemyPurple: PlayBGM(BGMTrack::PurpleTank); break;
+        case TankType::EnemyGreen:  PlayBGM(BGMTrack::GreenTank); break;
+        case TankType::EnemyRed:    PlayBGM(BGMTrack::RedTank); break;
+        case TankType::EnemyYellow: PlayBGM(BGMTrack::YellowTank); break;
+        case TankType::EnemyTeal:   PlayBGM(BGMTrack::TealTank); break;
+        case TankType::EnemyAsh:    PlayBGM(BGMTrack::AshTank); break;
+        case TankType::EnemyBrown:  PlayBGM(BGMTrack::BrownTank); break;
+        default:                    PlayBGM(BGMTrack::BrownTank); break;
+    }
 }
 
 void AudioManager::StopBGM() {
-    m_currentBGM = BGMTrack::None;
+    if (m_activeMusic) {
+        StopMusicStream(*m_activeMusic);
+        m_activeMusic = nullptr;
+    }
+    m_currentTrack = BGMTrack::None;
 }
 
 void AudioManager::GenerateProceduralSounds() {
@@ -172,109 +247,10 @@ void AudioManager::Play(SoundType type) {
     }
 }
 
-// Procedural real-time Wii Play Tanks theme music generator
 void AudioManager::Update(float dt) {
     if (!m_initialized) return;
 
-    if (IsAudioStreamProcessed(m_bgmStream)) {
-        const int FRAMES_TO_STREAM = 4096;
-        short buffer[FRAMES_TO_STREAM * 2];
-
-        float sampleRate = 44100.0f;
-        float dtSample = 1.0f / sampleRate;
-
-        // Wii Tanks Tempo: 118 BPM
-        float bpm = 118.0f;
-        float beatDuration = 60.0f / bpm;
-
-        // Note frequencies (D minor / F Major)
-        float fD2 = 73.42f;
-        float fF2 = 87.31f;
-        float fG2 = 98.00f;
-        float fA2 = 110.0f;
-        float fD3 = 146.83f;
-        float fF3 = 174.61f;
-        float fA3 = 220.0f;
-        float fC4 = 261.63f;
-        float fD4 = 293.66f;
-        float fE4 = 329.63f;
-        float fF4 = 349.23f;
-        float fA4 = 440.0f;
-
-        for (int i = 0; i < FRAMES_TO_STREAM; ++i) {
-            float t = m_bgmTime;
-            m_bgmTime += dtSample;
-
-            if (m_currentBGM == BGMTrack::None) {
-                buffer[i * 2] = 0;
-                buffer[i * 2 + 1] = 0;
-                continue;
-            }
-
-            float currentBeat = t / beatDuration;
-            int beatIndex = static_cast<int>(currentBeat);
-            float beatFrac = currentBeat - float(beatIndex);
-
-            int barStep = beatIndex % 16; // 4 bars loop
-            int sixteenth = static_cast<int>(beatFrac * 4.0f);
-            float sixteenthFrac = (beatFrac * 4.0f) - float(sixteenth);
-
-            float outL = 0.0f;
-            float outR = 0.0f;
-
-            if (m_currentBGM == BGMTrack::Gameplay || m_currentBGM == BGMTrack::Title) {
-                // 1. Bass Groove (Signature D minor punchy bassline)
-                float bassFreq = fD2;
-                if (barStep == 2 || barStep == 10) bassFreq = fF2;
-                else if (barStep == 3 || barStep == 11) bassFreq = fG2;
-                else if (barStep == 6 || barStep == 14) bassFreq = fA2;
-                else if (barStep == 7 || barStep == 15) bassFreq = fD3;
-
-                float bassEnv = std::exp(-beatFrac * 6.0f);
-                float bassTone = std::sin(t * bassFreq * 2.0f * PI) * 0.45f + 
-                                 std::sin(t * bassFreq * 2.0f * 2.0f * PI) * 0.15f;
-                float bass = bassTone * bassEnv;
-
-                // 2. Woody Marimba / Arpeggio Chords
-                float marimbaFreq = 0.0f;
-                int arpStep = (barStep * 4 + sixteenth) % 16;
-                const float arpTable[16] = { fD4, fF4, fA4, fD4, fF4, fA4, fC4, fD4, fE4, fF4, fA4, fF4, fE4, fD4, fA3, fD4 };
-                marimbaFreq = arpTable[arpStep];
-
-                float marimbaEnv = std::exp(-sixteenthFrac * 12.0f);
-                float marimba = (std::sin(t * marimbaFreq * 2.0f * PI) * 0.28f +
-                                 std::sin(t * marimbaFreq * 3.0f * 2.0f * PI) * 0.08f) * marimbaEnv;
-
-                // 3. Drums: Kick & Snare & Hi-Hat
-                float kick = 0.0f;
-                if (barStep % 2 == 0) {
-                    float kEnv = std::exp(-beatFrac * 16.0f);
-                    kick = std::sin(t * (60.0f - beatFrac * 30.0f) * 2.0f * PI) * 0.35f * kEnv;
-                }
-
-                float snare = 0.0f;
-                if (barStep % 2 == 1) {
-                    float sEnv = std::exp(-beatFrac * 14.0f);
-                    float noise = ((rand() % 100) / 50.0f - 1.0f);
-                    snare = (noise * 0.25f + std::sin(t * 190.0f * 2.0f * PI) * 0.15f) * sEnv;
-                }
-
-                float hihat = 0.0f;
-                float hEnv = std::exp(-sixteenthFrac * 25.0f);
-                hihat = ((rand() % 100) / 50.0f - 1.0f) * 0.08f * hEnv;
-
-                // Stereo Mix
-                outL = (bass * 0.5f + marimba * 0.6f + kick * 0.4f + snare * 0.3f + hihat * 0.3f) * m_bgmVolume;
-                outR = (bass * 0.5f + marimba * 0.4f + kick * 0.4f + snare * 0.3f + hihat * 0.5f) * m_bgmVolume;
-            }
-
-            outL = std::clamp(outL, -1.0f, 1.0f);
-            outR = std::clamp(outR, -1.0f, 1.0f);
-
-            buffer[i * 2] = static_cast<short>(outL * 32767.0f);
-            buffer[i * 2 + 1] = static_cast<short>(outR * 32767.0f);
-        }
-
-        UpdateAudioStream(m_bgmStream, buffer, FRAMES_TO_STREAM);
+    if (m_activeMusic) {
+        UpdateMusicStream(*m_activeMusic);
     }
 }

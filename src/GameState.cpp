@@ -9,6 +9,7 @@ GameState::GameState()
     , m_missionTimer(0.0f)
     , m_stateTimer(0.0f)
     , m_missionAnnounced(false)
+    , m_dominantEnemy(TankType::EnemyBrown)
 {
 }
 
@@ -51,20 +52,27 @@ void GameState::StartMission(int missionNumber, bool is2Player) {
         m_tanks.push_back(p2);
     }
 
-    // Spawn Enemy Tanks
+    // Spawn Enemy Tanks & Find Dominant Enemy Type
     uint32_t enemyId = 10;
+    m_dominantEnemy = TankType::EnemyBrown;
+
     for (const auto& spawn : m_level.GetEnemySpawns()) {
         Tank enemy(enemyId++, spawn.type, spawn.worldPos);
         enemy.isHuman = false;
         m_tanks.push_back(enemy);
+
+        if (spawn.type > m_dominantEnemy) {
+            m_dominantEnemy = spawn.type;
+        }
     }
 
     m_screen = GameScreen::StageIntro;
-    m_stateTimer = 1.6f;
+    m_stateTimer = 1.8f;
     m_missionTimer = 0.0f;
     m_missionAnnounced = true;
-    m_audioManager.Play(SoundType::MissionStart);
-    m_audioManager.PlayBGM(BGMTrack::Gameplay);
+
+    // Start fanfare jingle
+    m_audioManager.PlayBGM(BGMTrack::MissionIntro);
 }
 
 void GameState::NextMission() {
@@ -190,6 +198,8 @@ void GameState::Update(float dt, NetworkManager* network) {
         m_stateTimer -= dt;
         if (m_stateTimer <= 0.0f) {
             m_screen = GameScreen::Playing;
+            // Switch to the dynamic music of the dominant enemy tank
+            m_audioManager.PlayMissionBGM(m_dominantEnemy);
         }
         return;
     }
@@ -233,12 +243,12 @@ void GameState::Update(float dt, NetworkManager* network) {
         // Win / Loss conditions
         if (IsMissionComplete()) {
             m_screen = GameScreen::Victory;
-            m_stateTimer = 2.5f;
-            m_audioManager.Play(SoundType::Victory);
+            m_stateTimer = 2.8f;
+            m_audioManager.PlayBGM(BGMTrack::VictoryJingle);
         } else if (IsMissionFailed()) {
             m_screen = GameScreen::GameOver;
             m_stateTimer = 3.5f;
-            m_audioManager.Play(SoundType::GameOver);
+            m_audioManager.PlayBGM(BGMTrack::GameOverJingle);
         }
     } else if (m_screen == GameScreen::Victory) {
         m_particleManager.Update(dt);
