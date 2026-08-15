@@ -1,0 +1,10 @@
+build/
+bin/
+.cache/
+compile_commands.json
+*.o
+*.a
+*.so
+*.dylib
+*.exe
+.DS_Store

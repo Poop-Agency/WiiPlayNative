@@ -1,0 +1,139 @@
+#pragma once
+
+#include <cstdint>
+#include <string>
+#include <vector>
+#include <array>
+#include <cmath>
+#include "raylib.h"
+#include "raymath.h"
+
+// Grid dimensions (16:9 widescreen standard)
+constexpr int GRID_WIDTH = 22;
+constexpr int GRID_HEIGHT = 17;
+constexpr float CELL_SIZE = 2.0f;
+
+// World bounds calculated from grid
+constexpr float ARENA_WIDTH = GRID_WIDTH * CELL_SIZE;
+constexpr float ARENA_HEIGHT = GRID_HEIGHT * CELL_SIZE;
+constexpr float ARENA_HALF_W = ARENA_WIDTH * 0.5f;
+constexpr float ARENA_HALF_H = ARENA_HEIGHT * 0.5f;
+
+// Tank and physical constants
+constexpr float TANK_RADIUS = 0.75f;
+constexpr float TANK_HEIGHT = 0.7f;
+constexpr float BULLET_RADIUS = 0.18f;
+constexpr float BULLET_SPEED_NORMAL = 9.5f;
+constexpr float BULLET_SPEED_FAST = 16.0f;
+constexpr float MINE_RADIUS = 0.45f;
+constexpr float MINE_BLAST_RADIUS = 3.2f;
+constexpr float MINE_LIFETIME = 10.0f;
+
+// Game tiles and IDs matching original Nintendo data
+enum class TileType : uint32_t {
+    Empty = 0,
+    CorkBlock = 101,      // Destructible cork wall
+    SolidBlock = 102,     // Indestructible stone wall
+    BlockVariant1 = 103,
+    BlockVariant2 = 104,
+    Hole = 200,           // Trench/hole (bullets fly over, tanks cannot pass)
+    Hole2 = 201,
+    Hole3 = 202,
+    Hole4 = 203,
+    SpawnP1 = 300,
+    SpawnP2 = 301,
+    SpawnEnemyBrown = 400,
+    SpawnEnemyAsh = 401,
+    SpawnEnemyTeal = 402,
+    SpawnEnemyYellow = 403,
+    SpawnEnemyRed = 404,
+    SpawnEnemyGreen = 405,
+    SpawnEnemyPurple = 406,
+    SpawnEnemyWhite = 407,
+    SpawnEnemyBlack = 408
+};
+
+// Tank Types
+enum class TankType {
+    Player1,
+    Player2,
+    Player3,
+    Player4,
+    EnemyBrown,     // Stationary, 1 bullet, slow, no bounce
+    EnemyAsh,       // Slow wanderer, 1 bullet
+    EnemyTeal,      // Fast mover, fast rocket
+    EnemyYellow,    // Fast, places mines, flees
+    EnemyRed,       // Stationary/slow, calculated 1-bounce bank shots
+    EnemyGreen,     // Stationary, rapid-fire, 2-bounce ricochets
+    EnemyPurple,    // Mobile assault, 5 bullets, drops mines
+    EnemyWhite,     // Invisible stealth assassin, fast bullets
+    EnemyBlack      // Elite commander, agile dodging, rockets, mines
+};
+
+// Tank configuration properties
+struct TankConfig {
+    TankType type;
+    std::string name;
+    Color bodyColor;
+    Color treadColor;
+    Color turretColor;
+    float maxSpeed;
+    float turnSpeed;
+    int maxBullets;
+    int maxBounces;
+    float bulletSpeed;
+    int maxMines;
+    bool isRocket;
+    bool hasStealth;
+    int pointValue;
+};
+
+inline TankConfig GetTankConfig(TankType type) {
+    switch (type) {
+        case TankType::Player1:
+            return { type, "Player 1 (Blue)", { 50, 120, 220, 255 }, { 30, 30, 30, 255 }, { 70, 140, 240, 255 }, 4.5f, 5.0f, 5, 1, BULLET_SPEED_NORMAL, 2, false, false, 0 };
+        case TankType::Player2:
+            return { type, "Player 2 (Red)", { 220, 50, 50, 255 }, { 30, 30, 30, 255 }, { 240, 70, 70, 255 }, 4.5f, 5.0f, 5, 1, BULLET_SPEED_NORMAL, 2, false, false, 0 };
+        case TankType::Player3:
+            return { type, "Player 3 (Green)", { 50, 200, 70, 255 }, { 30, 30, 30, 255 }, { 70, 220, 90, 255 }, 4.5f, 5.0f, 5, 1, BULLET_SPEED_NORMAL, 2, false, false, 0 };
+        case TankType::Player4:
+            return { type, "Player 4 (Yellow)", { 230, 200, 40, 255 }, { 30, 30, 30, 255 }, { 250, 220, 60, 255 }, 4.5f, 5.0f, 5, 1, BULLET_SPEED_NORMAL, 2, false, false, 0 };
+        
+        case TankType::EnemyBrown:
+            return { type, "Brown Tank", { 160, 110, 70, 255 }, { 60, 50, 40, 255 }, { 180, 130, 90, 255 }, 0.0f, 2.5f, 1, 1, BULLET_SPEED_NORMAL * 0.85f, 0, false, false, 100 };
+        case TankType::EnemyAsh:
+            return { type, "Ash Tank", { 160, 160, 160, 255 }, { 50, 50, 50, 255 }, { 180, 180, 180, 255 }, 2.5f, 3.0f, 1, 1, BULLET_SPEED_NORMAL * 0.85f, 0, false, false, 200 };
+        case TankType::EnemyTeal:
+            return { type, "Teal Tank", { 40, 190, 190, 255 }, { 30, 60, 60, 255 }, { 60, 210, 210, 255 }, 5.5f, 5.0f, 1, 1, BULLET_SPEED_FAST, 0, true, false, 300 };
+        case TankType::EnemyYellow:
+            return { type, "Yellow Tank", { 230, 210, 50, 255 }, { 60, 60, 20, 255 }, { 250, 230, 70, 255 }, 5.0f, 4.5f, 1, 1, BULLET_SPEED_NORMAL, 4, false, false, 400 };
+        case TankType::EnemyRed:
+            return { type, "Red Tank", { 210, 50, 50, 255 }, { 50, 20, 20, 255 }, { 230, 70, 70, 255 }, 1.8f, 3.5f, 3, 1, BULLET_SPEED_NORMAL * 1.15f, 0, false, false, 500 };
+        case TankType::EnemyGreen:
+            return { type, "Green Tank", { 50, 180, 60, 255 }, { 20, 50, 20, 255 }, { 70, 200, 80, 255 }, 0.0f, 4.0f, 2, 2, BULLET_SPEED_FAST * 1.05f, 0, true, false, 600 };
+        case TankType::EnemyPurple:
+            return { type, "Purple Tank", { 170, 60, 200, 255 }, { 40, 20, 50, 255 }, { 190, 80, 220, 255 }, 4.0f, 4.0f, 5, 1, BULLET_SPEED_NORMAL, 2, false, false, 700 };
+        case TankType::EnemyWhite:
+            return { type, "White Tank", { 240, 240, 245, 255 }, { 80, 80, 80, 255 }, { 255, 255, 255, 255 }, 3.8f, 4.0f, 5, 1, BULLET_SPEED_FAST, 2, false, true, 800 };
+        case TankType::EnemyBlack:
+            return { type, "Black Tank", { 35, 35, 40, 255 }, { 15, 15, 15, 255 }, { 55, 55, 60, 255 }, 5.8f, 5.5f, 3, 1, BULLET_SPEED_FAST, 2, true, false, 1000 };
+    }
+    return { TankType::EnemyBrown, "Unknown", WHITE, BLACK, WHITE, 2.0f, 2.0f, 1, 1, 8.0f, 0, false, false, 100 };
+}
+
+// Game states
+enum class GameScreen {
+    Title,
+    MissionSelect,
+    LobbyMultiplayer,
+    Playing,
+    StageIntro,
+    GameOver,
+    Victory
+};
+
+enum class GameMode {
+    CampaignSingle,
+    CampaignCoop,
+    PvPDeathmatch
+};

@@ -1,0 +1,44 @@
+#pragma once
+
+#include "Common.hpp"
+#include <vector>
+
+class Level;
+class Tank;
+class ParticleManager;
+
+struct Bullet {
+    uint32_t id;
+    uint32_t ownerId;
+    Vector2 position;
+    Vector2 velocity;
+    float speed;
+    int bouncesLeft;
+    bool isRocket;
+    float lifetime;
+    bool active;
+    Color color;
+
+    // Trail effect
+    std::vector<Vector2> trail;
+    float trailTimer;
+};
+
+class BulletManager {
+public:
+    BulletManager();
+    ~BulletManager();
+
+    void Reset();
+    void SpawnBullet(uint32_t ownerId, Vector2 pos, Vector2 dir, float speed, int bounces, bool isRocket, Color color);
+    void Update(float dt, Level& level, std::vector<Tank>& tanks, ParticleManager& particles, bool isServer);
+    
+    std::vector<Bullet>& GetBullets() { return m_bullets; }
+    const std::vector<Bullet>& GetBullets() const { return m_bullets; }
+
+    int CountActiveBulletsForOwner(uint32_t ownerId) const;
+
+private:
+    std::vector<Bullet> m_bullets;
+    uint32_t m_nextId;
+};
