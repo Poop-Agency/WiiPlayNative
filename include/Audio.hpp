@@ -51,6 +51,10 @@ public:
     void StopBGM();
     void SetVolume(float vol);
 
+    // Dynamic Engine & Tread Audio
+    void UpdateEngineAudio(bool isMoving, float speedRatio, int movingEnemiesCount);
+    void StopEngineAudio();
+
 private:
     void GenerateProceduralSounds();
     void LoadMP3Tracks();
@@ -66,6 +70,11 @@ private:
     Sound m_sndMissionStart;
     Sound m_sndVictory;
     Sound m_sndGameOver;
+
+    // Engine & Tread sound
+    Sound m_sndEngineIdle;
+    Sound m_sndEngineDrive;
+    bool m_enginePlaying;
 
     // Raylib Music Streaming
     std::unordered_map<BGMTrack, Music> m_musicTracks;

@@ -34,6 +34,7 @@ AudioManager::AudioManager()
     , m_volume(0.70f)
     , m_initialized(false)
     , m_hasMp3(false)
+    , m_enginePlaying(false)
 {
 }
 
@@ -88,6 +89,7 @@ void AudioManager::LoadMP3Tracks() {
 void AudioManager::Close() {
     if (!m_initialized) return;
 
+    StopEngineAudio();
     StopBGM();
 
     for (auto& pair : m_musicTracks) {
@@ -105,6 +107,8 @@ void AudioManager::Close() {
     UnloadSound(m_sndMissionStart);
     UnloadSound(m_sndVictory);
     UnloadSound(m_sndGameOver);
+    UnloadSound(m_sndEngineIdle);
+    UnloadSound(m_sndEngineDrive);
 
     CloseAudioDevice();
     m_initialized = false;
@@ -227,6 +231,24 @@ void AudioManager::GenerateProceduralSounds() {
         float note = 392.0f - (t / dur) * 160.0f;
         return std::sin(t * note * 2.0f * PI) * env * 0.5f;
     });
+
+    // Seamless 1.5s Tank Engine Idle Loop (Low toy-motor hum)
+    m_sndEngineIdle = GenerateSound(rate, 1.5f, [](float t, float dur) {
+        float baseHum = std::sin(t * 65.0f * 2.0f * PI) * 0.5f +
+                        std::sin(t * 130.0f * 2.0f * PI) * 0.3f;
+        float flutter = (1.0f + 0.3f * std::sin(t * 18.0f * 2.0f * PI));
+        float noise = ((rand() % 100) / 50.0f - 1.0f) * 0.12f;
+        return (baseHum * flutter + noise) * 0.35f;
+    });
+
+    // Seamless 1.5s Tank Caterpillar Tread Drive Loop (Mechanical grinding clicks)
+    m_sndEngineDrive = GenerateSound(rate, 1.5f, [](float t, float dur) {
+        float motor = std::sin(t * 115.0f * 2.0f * PI) * 0.4f +
+                      std::sin(t * 230.0f * 2.0f * PI) * 0.2f;
+        float treadClick = std::pow(std::sin(t * 24.0f * 2.0f * PI), 8.0f) * 0.45f;
+        float noise = ((rand() % 100) / 50.0f - 1.0f) * 0.22f;
+        return (motor + treadClick + noise) * 0.5f;
+    });
 }
 
 void AudioManager::Play(SoundType type) {
@@ -244,6 +266,43 @@ void AudioManager::Play(SoundType type) {
         case SoundType::Victory:      PlaySound(m_sndVictory); break;
         case SoundType::GameOver:     PlaySound(m_sndGameOver); break;
         default: break;
+    }
+}
+
+void AudioManager::UpdateEngineAudio(bool isMoving, float speedRatio, int movingEnemiesCount) {
+    if (!m_initialized) return;
+
+    if (!m_enginePlaying) {
+        PlaySound(m_sndEngineIdle);
+        PlaySound(m_sndEngineDrive);
+        m_enginePlaying = true;
+    }
+
+    if (!IsSoundPlaying(m_sndEngineIdle)) PlaySound(m_sndEngineIdle);
+    if (!IsSoundPlaying(m_sndEngineDrive)) PlaySound(m_sndEngineDrive);
+
+    if (isMoving) {
+        float drivePitch = 0.95f + speedRatio * 0.4f;
+        SetSoundPitch(m_sndEngineDrive, drivePitch);
+        SetSoundVolume(m_sndEngineDrive, 0.45f);
+
+        SetSoundPitch(m_sndEngineIdle, 1.2f);
+        SetSoundVolume(m_sndEngineIdle, 0.15f);
+    } else {
+        float ambientEnemies = std::min(1.0f, movingEnemiesCount * 0.25f);
+        SetSoundPitch(m_sndEngineIdle, 0.85f);
+        SetSoundVolume(m_sndEngineIdle, 0.25f);
+
+        SetSoundPitch(m_sndEngineDrive, 0.85f);
+        SetSoundVolume(m_sndEngineDrive, 0.15f * ambientEnemies);
+    }
+}
+
+void AudioManager::StopEngineAudio() {
+    if (m_enginePlaying) {
+        StopSound(m_sndEngineIdle);
+        StopSound(m_sndEngineDrive);
+        m_enginePlaying = false;
     }
 }
 

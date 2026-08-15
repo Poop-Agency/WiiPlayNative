@@ -29,6 +29,7 @@ void GameState::Reset() {
     m_particleManager.Reset();
     m_aiManager.Reset();
     m_level.Reset();
+    m_audioManager.StopEngineAudio();
 }
 
 void GameState::StartMission(int missionNumber, bool is2Player) {
@@ -195,6 +196,7 @@ void GameState::Update(float dt, NetworkManager* network) {
     m_audioManager.Update(dt);
 
     if (m_screen == GameScreen::StageIntro) {
+        m_audioManager.StopEngineAudio();
         m_stateTimer -= dt;
         if (m_stateTimer <= 0.0f) {
             m_screen = GameScreen::Playing;
@@ -206,6 +208,10 @@ void GameState::Update(float dt, NetworkManager* network) {
 
     if (m_screen == GameScreen::Playing) {
         m_missionTimer += dt;
+
+        bool playerMoving = false;
+        float playerSpeedRatio = 0.0f;
+        int movingEnemies = 0;
 
         // Process tank actions
         for (auto& tank : m_tanks) {
@@ -228,7 +234,21 @@ void GameState::Update(float dt, NetworkManager* network) {
             }
 
             tank.Update(dt, m_level, m_particleManager);
+
+            // Track movement for engine noise
+            float currentSpeed = Vector2Length(tank.GetVelocity());
+            if (currentSpeed > 0.1f) {
+                if (tank.isHuman && tank.GetId() == 0) {
+                    playerMoving = true;
+                    playerSpeedRatio = currentSpeed / (tank.GetConfig().maxSpeed > 0.0f ? tank.GetConfig().maxSpeed : 5.0f);
+                } else if (!tank.isHuman) {
+                    movingEnemies++;
+                }
+            }
         }
+
+        // Real-time engine audio feedback
+        m_audioManager.UpdateEngineAudio(playerMoving, playerSpeedRatio, movingEnemies);
 
         // Update AI for enemies
         m_aiManager.Update(dt, m_tanks, m_level, m_bulletManager, m_mineManager);
@@ -242,25 +262,31 @@ void GameState::Update(float dt, NetworkManager* network) {
 
         // Win / Loss conditions
         if (IsMissionComplete()) {
+            m_audioManager.StopEngineAudio();
             m_screen = GameScreen::Victory;
             m_stateTimer = 2.8f;
             m_audioManager.PlayBGM(BGMTrack::VictoryJingle);
         } else if (IsMissionFailed()) {
+            m_audioManager.StopEngineAudio();
             m_screen = GameScreen::GameOver;
             m_stateTimer = 3.5f;
             m_audioManager.PlayBGM(BGMTrack::GameOverJingle);
         }
     } else if (m_screen == GameScreen::Victory) {
+        m_audioManager.StopEngineAudio();
         m_particleManager.Update(dt);
         m_stateTimer -= dt;
         if (m_stateTimer <= 0.0f) {
             NextMission();
         }
     } else if (m_screen == GameScreen::GameOver) {
+        m_audioManager.StopEngineAudio();
         m_particleManager.Update(dt);
         m_stateTimer -= dt;
         if (m_stateTimer <= 0.0f) {
             RestartMission();
         }
+    } else {
+        m_audioManager.StopEngineAudio();
     }
 }

@@ -27,6 +27,9 @@ public:
     Vector2 GetPosition() const { return m_position; }
     void SetPosition(Vector2 pos) { m_position = pos; }
 
+    Vector2 GetVelocity() const { return m_velocity; }
+    float GetSpeed() const { return m_speed; }
+
     float GetChassisAngle() const { return m_chassisAngle; }
     void SetChassisAngle(float angle) { m_chassisAngle = angle; }
 
