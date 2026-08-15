@@ -16,6 +16,7 @@ GameState::~GameState() {}
 
 void GameState::Init() {
     m_audioManager.Init();
+    m_audioManager.PlayBGM(BGMTrack::Title);
     m_playerScores.push_back({ 0, "Player 1", 0, 0, 0, { 50, 120, 220, 255 } });
     m_playerScores.push_back({ 1, "Player 2", 0, 0, 0, { 220, 50, 50, 255 } });
 }
@@ -59,10 +60,11 @@ void GameState::StartMission(int missionNumber, bool is2Player) {
     }
 
     m_screen = GameScreen::StageIntro;
-    m_stateTimer = 1.8f;
+    m_stateTimer = 1.6f;
     m_missionTimer = 0.0f;
     m_missionAnnounced = true;
     m_audioManager.Play(SoundType::MissionStart);
+    m_audioManager.PlayBGM(BGMTrack::Gameplay);
 }
 
 void GameState::NextMission() {
@@ -181,6 +183,9 @@ void GameState::ProcessLocalInput(Camera3D& camera, uint32_t localPlayerId) {
 }
 
 void GameState::Update(float dt, NetworkManager* network) {
+    // Always update audio streamer
+    m_audioManager.Update(dt);
+
     if (m_screen == GameScreen::StageIntro) {
         m_stateTimer -= dt;
         if (m_stateTimer <= 0.0f) {
