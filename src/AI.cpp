@@ -195,17 +195,21 @@ void AIManager::UpdateEnemy(Tank& enemy, AIState& state, float dt,
     if (canShoot && state.shootTimer <= 0.0f) {
         enemy.shootRequested = true;
 
+        // Cooldowns come from TnkGameParam.bin (col 37, frames at 60 Hz), with a small
+        // jitter so a pack of identical tanks does not fire in lockstep.
+        float cooldown = enemy.GetConfig().shootCooldown;
+
         if (enemy.GetType() == TankType::EnemyGreen) {
-            // Rapid bursts
+            // Green fires its two shots back to back, then waits out the full cooldown
             state.burstCount++;
             if (state.burstCount < 2) {
                 state.shootTimer = 0.15f;
             } else {
                 state.burstCount = 0;
-                state.shootTimer = 1.6f + (rand() % 100) / 100.0f;
+                state.shootTimer = cooldown;
             }
         } else {
-            state.shootTimer = 1.0f + (rand() % 100) / 70.0f;
+            state.shootTimer = cooldown * (0.9f + (rand() % 100) / 500.0f);
         }
     }
 
