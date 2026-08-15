@@ -24,30 +24,103 @@ void Level::Reset() {
     m_player2Spawn = { -ARENA_HALF_W + CELL_SIZE * 2, CELL_SIZE * 2 };
 }
 
+// Authentic Wii Play Tanks! 100 Missions definitions
+MissionDef Level::GetMissionDef(int missionNumber) {
+    if (missionNumber < 1) missionNumber = 1;
+
+    // Missions 1 to 20 (Fixed classic campaign progression)
+    static const std::vector<MissionDef> s_classicMissions = {
+        /* Mission 1  */ { 0,  { TankType::EnemyBrown } },
+        /* Mission 2  */ { 1,  { TankType::EnemyAsh, TankType::EnemyAsh } },
+        /* Mission 3  */ { 2,  { TankType::EnemyBrown, TankType::EnemyAsh } },
+        /* Mission 4  */ { 3,  { TankType::EnemyBrown, TankType::EnemyAsh, TankType::EnemyAsh } },
+        /* Mission 5  */ { 4,  { TankType::EnemyTeal, TankType::EnemyBrown } },
+        /* Mission 6  */ { 5,  { TankType::EnemyTeal, TankType::EnemyAsh, TankType::EnemyAsh } },
+        /* Mission 7  */ { 6,  { TankType::EnemyTeal, TankType::EnemyTeal, TankType::EnemyBrown } },
+        /* Mission 8  */ { 7,  { TankType::EnemyYellow, TankType::EnemyAsh, TankType::EnemyAsh } },
+        /* Mission 9  */ { 8,  { TankType::EnemyYellow, TankType::EnemyYellow, TankType::EnemyTeal } },
+        /* Mission 10 */ { 9,  { TankType::EnemyRed, TankType::EnemyAsh, TankType::EnemyAsh } },
+        /* Mission 11 */ { 10, { TankType::EnemyRed, TankType::EnemyYellow, TankType::EnemyBrown } },
+        /* Mission 12 */ { 11, { TankType::EnemyRed, TankType::EnemyRed, TankType::EnemyTeal } },
+        /* Mission 13 */ { 12, { TankType::EnemyGreen, TankType::EnemyAsh, TankType::EnemyAsh } },
+        /* Mission 14 */ { 13, { TankType::EnemyGreen, TankType::EnemyTeal, TankType::EnemyYellow } },
+        /* Mission 15 */ { 14, { TankType::EnemyGreen, TankType::EnemyGreen, TankType::EnemyRed } },
+        /* Mission 16 */ { 15, { TankType::EnemyPurple, TankType::EnemyYellow, TankType::EnemyYellow } },
+        /* Mission 17 */ { 16, { TankType::EnemyPurple, TankType::EnemyGreen, TankType::EnemyTeal } },
+        /* Mission 18 */ { 17, { TankType::EnemyPurple, TankType::EnemyPurple, TankType::EnemyRed } },
+        /* Mission 19 */ { 18, { TankType::EnemyWhite, TankType::EnemyTeal, TankType::EnemyTeal } },
+        /* Mission 20 */ { 19, { TankType::EnemyBlack, TankType::EnemyRed, TankType::EnemyRed } }
+    };
+
+    if (missionNumber <= 20) {
+        return s_classicMissions[missionNumber - 1];
+    }
+
+    // Missions 21 to 100 (Escalating difficulties across the 30 map layouts)
+    int mapIdx = (missionNumber - 1) % 30;
+    std::vector<TankType> enemies;
+
+    int tier = (missionNumber - 21) / 10; // 0 to 7
+    int enemyCount = std::min(8, 3 + (missionNumber / 18));
+
+    // Fill with escalating high-tier enemies
+    for (int i = 0; i < enemyCount; ++i) {
+        if (missionNumber == 100) {
+            // Ultimate Mission 100 Boss
+            enemies = { 
+                TankType::EnemyBlack, TankType::EnemyBlack, 
+                TankType::EnemyWhite, TankType::EnemyWhite, 
+                TankType::EnemyPurple, TankType::EnemyPurple, 
+                TankType::EnemyGreen, TankType::EnemyGreen 
+            };
+            break;
+        }
+
+        if (missionNumber % 10 == 0 && i == 0) {
+            // Every 10 missions: Boss Black tank
+            enemies.push_back(TankType::EnemyBlack);
+            continue;
+        }
+
+        int randChoice = (missionNumber * 7 + i * 13) % 100;
+        if (tier >= 5 && randChoice > 75) {
+            enemies.push_back(TankType::EnemyWhite);
+        } else if (tier >= 4 && randChoice > 55) {
+            enemies.push_back(TankType::EnemyPurple);
+        } else if (tier >= 3 && randChoice > 40) {
+            enemies.push_back(TankType::EnemyGreen);
+        } else if (tier >= 2 && randChoice > 25) {
+            enemies.push_back(TankType::EnemyRed);
+        } else if (tier >= 1 && randChoice > 15) {
+            enemies.push_back(TankType::EnemyYellow);
+        } else {
+            enemies.push_back(TankType::EnemyTeal);
+        }
+    }
+
+    return { mapIdx, enemies };
+}
+
 bool Level::LoadMission(int missionNumber, bool is2Player) {
     m_currentMission = missionNumber;
-    int missionIdx = missionNumber - 1;
-    if (missionIdx < 0) missionIdx = 0;
-    
-    // Original mission files are numbered 00 to 29 or more (with variants)
-    std::string prefix = is2Player ? "TnkMapData_P2_" : "TnkMapData_P1_";
-    int fileIdx = missionIdx % 30; // 30 official core stages
-    int variant = (missionIdx / 30) % 2;
+    MissionDef def = GetMissionDef(missionNumber);
 
-    std::ostringstream ss;
-    ss << "assets/maps/" << prefix << std::setfill('0') << std::setw(2) << fileIdx << "_" << variant << ".bin";
+    std::string prefix = is2Player ? "TnkMapData_P2_" : "TnkMapData_P1_";
     
-    if (LoadFromBinary(ss.str())) {
+    std::ostringstream ss;
+    ss << "assets/maps/" << prefix << std::setfill('0') << std::setw(2) << def.mapIndex << "_1.bin";
+    
+    if (LoadFromBinary(ss.str(), def.enemies)) {
         return true;
     }
 
-    // Fallback: try non-variant 1
+    // Fallback try non-variant 0
     std::ostringstream ssFallback;
-    ssFallback << "assets/maps/" << prefix << std::setfill('0') << std::setw(2) << fileIdx << "_1.bin";
-    return LoadFromBinary(ssFallback.str());
+    ssFallback << "assets/maps/" << prefix << std::setfill('0') << std::setw(2) << def.mapIndex << "_0.bin";
+    return LoadFromBinary(ssFallback.str(), def.enemies);
 }
 
-bool Level::LoadFromBinary(const std::string& filepath) {
+bool Level::LoadFromBinary(const std::string& filepath, const std::vector<TankType>& missionEnemies) {
     std::ifstream file(filepath, std::ios::binary);
     if (!file.is_open()) {
         std::cerr << "Failed to open map file: " << filepath << std::endl;
@@ -55,22 +128,28 @@ bool Level::LoadFromBinary(const std::string& filepath) {
     }
 
     // Read header (16 bytes)
-    uint32_t rawW = 0, rawH = 0, unk1 = 0, unk2 = 0;
     auto readBE32 = [](std::ifstream& f) -> uint32_t {
         unsigned char b[4];
         f.read(reinterpret_cast<char*>(b), 4);
         return (uint32_t(b[0]) << 24) | (uint32_t(b[1]) << 16) | (uint32_t(b[2]) << 8) | uint32_t(b[3]);
     };
 
-    rawW = readBE32(file);
-    rawH = readBE32(file);
-    unk1 = readBE32(file);
-    unk2 = readBE32(file);
+    uint32_t rawW = readBE32(file);
+    uint32_t rawH = readBE32(file);
+    readBE32(file); // unk1
+    readBE32(file); // unk2
 
     m_width = rawW;
     m_height = rawH;
     m_grid.assign(m_width * m_height, TileType::Empty);
     m_enemySpawns.clear();
+
+    struct PotentialSpawn {
+        Vector2 worldPos;
+        int gridX;
+        int gridY;
+    };
+    std::vector<PotentialSpawn> potentialSpawns;
 
     for (int y = 0; y < m_height; ++y) {
         for (int x = 0; x < m_width; ++x) {
@@ -87,20 +166,7 @@ bool Level::LoadFromBinary(const std::string& filepath) {
                 m_player2Spawn = wPos;
                 m_grid[idx] = TileType::Empty;
             } else if (val >= 400 && val <= 408) {
-                TankType eType = TankType::EnemyBrown;
-                switch (tile) {
-                    case TileType::SpawnEnemyBrown:  eType = TankType::EnemyBrown; break;
-                    case TileType::SpawnEnemyAsh:    eType = TankType::EnemyAsh; break;
-                    case TileType::SpawnEnemyTeal:   eType = TankType::EnemyTeal; break;
-                    case TileType::SpawnEnemyYellow: eType = TankType::EnemyYellow; break;
-                    case TileType::SpawnEnemyRed:    eType = TankType::EnemyRed; break;
-                    case TileType::SpawnEnemyGreen:  eType = TankType::EnemyGreen; break;
-                    case TileType::SpawnEnemyPurple: eType = TankType::EnemyPurple; break;
-                    case TileType::SpawnEnemyWhite:  eType = TankType::EnemyWhite; break;
-                    case TileType::SpawnEnemyBlack:  eType = TankType::EnemyBlack; break;
-                    default:                         eType = TankType::EnemyBrown; break;
-                }
-                m_enemySpawns.push_back({ eType, wPos, x, y });
+                potentialSpawns.push_back({ wPos, x, y });
                 m_grid[idx] = TileType::Empty;
             } else {
                 m_grid[idx] = tile;
@@ -108,8 +174,22 @@ bool Level::LoadFromBinary(const std::string& filepath) {
         }
     }
 
-    std::cout << "Loaded map: " << filepath << " (" << m_width << "x" << m_height 
-              << ") with " << m_enemySpawns.size() << " enemies." << std::endl;
+    // Assign exactly the enemies required for this mission into available map spawn slots
+    for (size_t i = 0; i < missionEnemies.size(); ++i) {
+        TankType eType = missionEnemies[i];
+        if (i < potentialSpawns.size()) {
+            m_enemySpawns.push_back({ eType, potentialSpawns[i].worldPos, potentialSpawns[i].gridX, potentialSpawns[i].gridY });
+        } else {
+            // Fallback spawn across table if more enemies than map markers
+            float offset = float(i) * 3.0f;
+            Vector2 fallbackPos = { ARENA_HALF_W - 4.0f, -ARENA_HALF_H + 4.0f + offset };
+            m_enemySpawns.push_back({ eType, fallbackPos, m_width - 3, 3 + int(i) });
+        }
+    }
+
+    std::cout << "Loaded Mission " << m_currentMission << ": Map " << filepath 
+              << " (" << m_width << "x" << m_height << ") with " 
+              << m_enemySpawns.size() << " authentic enemy tanks." << std::endl;
     return true;
 }
 
@@ -170,7 +250,6 @@ bool Level::CheckTankCollision(Vector2 pos, float radius, Vector2& outPushback) 
     outPushback = { 0.0f, 0.0f };
     bool collided = false;
 
-    // Check bounds
     float halfArenaW = (m_width * 0.5f) * CELL_SIZE;
     float halfArenaH = (m_height * 0.5f) * CELL_SIZE;
 
@@ -191,7 +270,6 @@ bool Level::CheckTankCollision(Vector2 pos, float radius, Vector2& outPushback) 
         collided = true;
     }
 
-    // Check neighboring grid cells
     int centerGx, centerGy;
     WorldToGrid(pos, centerGx, centerGy);
 
@@ -204,7 +282,6 @@ bool Level::CheckTankCollision(Vector2 pos, float radius, Vector2& outPushback) 
                 Vector2 tileCenter = GridToWorld(gx, gy);
                 float halfCell = CELL_SIZE * 0.5f;
 
-                // Find closest point on AABB to circle
                 float closestX = std::clamp(pos.x, tileCenter.x - halfCell, tileCenter.x + halfCell);
                 float closestY = std::clamp(pos.y, tileCenter.y - halfCell, tileCenter.y + halfCell);
 
@@ -219,7 +296,6 @@ bool Level::CheckTankCollision(Vector2 pos, float radius, Vector2& outPushback) 
                     outPushback.y += (distY / dist) * overlap;
                     collided = true;
                 } else if (distSq <= 0.0001f) {
-                    // Center inside block: push out along smallest axis
                     float pushX = (pos.x >= tileCenter.x) ? (tileCenter.x + halfCell + radius - pos.x) : (tileCenter.x - halfCell - radius - pos.x);
                     float pushY = (pos.y >= tileCenter.y) ? (tileCenter.y + halfCell + radius - pos.y) : (tileCenter.y - halfCell - radius - pos.y);
                     if (std::abs(pushX) < std::abs(pushY)) {
@@ -236,7 +312,6 @@ bool Level::CheckTankCollision(Vector2 pos, float radius, Vector2& outPushback) 
     return collided;
 }
 
-// 2D DDA Raycaster for bullet trajectory and ricochet reflection
 bool Level::Raycast(Vector2 start, Vector2 dir, float maxDist, 
                      Vector2& outHitPoint, Vector2& outNormal, 
                      int& outTileX, int& outTileY, bool ignoreHoles) const 
@@ -248,7 +323,6 @@ bool Level::Raycast(Vector2 start, Vector2 dir, float maxDist,
     float halfArenaW = (m_width * 0.5f) * CELL_SIZE;
     float halfArenaH = (m_height * 0.5f) * CELL_SIZE;
 
-    // First check bounds collision (outer wooden table border)
     float tBound = maxDist;
     Vector2 boundNormal = { 0.0f, 0.0f };
 
@@ -268,7 +342,6 @@ bool Level::Raycast(Vector2 start, Vector2 dir, float maxDist,
         if (t > 0.0f && t < tBound) { tBound = t; boundNormal = { 0.0f, 1.0f }; }
     }
 
-    // Grid DDA
     int gx, gy;
     WorldToGrid(start, gx, gy);
 
@@ -314,7 +387,6 @@ bool Level::Raycast(Vector2 start, Vector2 dir, float maxDist,
         }
     }
 
-    // If we hit outer boundary wall
     if (tBound < maxDist) {
         outHitPoint = { start.x + rayDir.x * tBound, start.y + rayDir.y * tBound };
         outNormal = boundNormal;

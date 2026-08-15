@@ -11,13 +11,18 @@ struct EnemySpawn {
     int gridY;
 };
 
+struct MissionDef {
+    int mapIndex; // 0 to 29
+    std::vector<TankType> enemies;
+};
+
 class Level {
 public:
     Level();
     ~Level();
 
-    bool LoadFromBinary(const std::string& filepath);
     bool LoadMission(int missionNumber, bool is2Player = false);
+    bool LoadFromBinary(const std::string& filepath, const std::vector<TankType>& missionEnemies);
     void Reset();
 
     // Grid queries
@@ -47,6 +52,8 @@ public:
     int GetWidth() const { return m_width; }
     int GetHeight() const { return m_height; }
     int GetMissionNumber() const { return m_currentMission; }
+
+    static MissionDef GetMissionDef(int missionNumber);
 
 private:
     int m_width;
