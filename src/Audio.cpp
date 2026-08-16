@@ -71,6 +71,14 @@ AudioManager::AudioManager()
     , m_hasTread(false)
     , m_treadIdx(0)
     , m_treadTimer(0.0f)
+    , m_sndTankHit{}
+    , m_hasShoot(false)
+    , m_hasTankHit(false)
+    , m_hasRicochet(false)
+    , m_hasBlockBreak(false)
+    , m_hasMinePlant(false)
+    , m_hasMineBeep(false)
+    , m_hasExplosion(false)
 {
 }
 
@@ -84,6 +92,7 @@ void AudioManager::Init() {
     InitAudioDevice();
     if (IsAudioDeviceReady()) {
         GenerateProceduralSounds();
+        LoadRippedSounds();
         LoadTreadSounds();
         LoadMP3Tracks();
         m_initialized = true;
@@ -177,6 +186,62 @@ void AudioManager::GenerateProceduralSounds() {
     SetSoundVolume(m_sndEngineDrive, 0.16f);
 }
 
+void AudioManager::LoadRippedSounds() {
+    Sound s1 = LoadSound("assets/sfx/RP_TNK_SE_SHOOT_1P.wav");
+    if (IsSoundValid(s1)) {
+        UnloadSound(m_sndShoot);
+        m_sndShoot = s1;
+        m_hasShoot = true;
+        SetSoundVolume(m_sndShoot, 0.40f);
+    } else m_hasShoot = false;
+
+    m_sndTankHit = LoadSound("assets/sfx/RP_TNK_SE_HIT.wav");
+    if (IsSoundValid(m_sndTankHit)) {
+        m_hasTankHit = true;
+        SetSoundVolume(m_sndTankHit, 0.40f);
+    } else m_hasTankHit = false;
+
+    Sound s3 = LoadSound("assets/sfx/RP_TNK_SE_REFLECT.wav");
+    if (IsSoundValid(s3)) {
+        UnloadSound(m_sndRicochet);
+        m_sndRicochet = s3;
+        m_hasRicochet = true;
+        SetSoundVolume(m_sndRicochet, 0.35f);
+    } else m_hasRicochet = false;
+
+    Sound s4 = LoadSound("assets/sfx/RP_TNK_SE_BROKEN.wav");
+    if (IsSoundValid(s4)) {
+        UnloadSound(m_sndBlockBreak);
+        m_sndBlockBreak = s4;
+        m_hasBlockBreak = true;
+        SetSoundVolume(m_sndBlockBreak, 0.35f);
+    } else m_hasBlockBreak = false;
+
+    Sound s5 = LoadSound("assets/sfx/RP_TNK_SE_JIRAI_SET.wav");
+    if (IsSoundValid(s5)) {
+        UnloadSound(m_sndMinePlant);
+        m_sndMinePlant = s5;
+        m_hasMinePlant = true;
+        SetSoundVolume(m_sndMinePlant, 0.35f);
+    } else m_hasMinePlant = false;
+
+    Sound s6 = LoadSound("assets/sfx/RP_TNK_SE_JIRAI_TIMER.wav");
+    if (IsSoundValid(s6)) {
+        UnloadSound(m_sndMineBeep);
+        m_sndMineBeep = s6;
+        m_hasMineBeep = true;
+        SetSoundVolume(m_sndMineBeep, 0.25f);
+    } else m_hasMineBeep = false;
+
+    Sound s7 = LoadSound("assets/sfx/RP_TNK_SE_JIRAI_EXP.wav");
+    if (IsSoundValid(s7)) {
+        UnloadSound(m_sndExplosion);
+        m_sndExplosion = s7;
+        m_hasExplosion = true;
+        SetSoundVolume(m_sndExplosion, 0.45f);
+    } else m_hasExplosion = false;
+}
+
 void AudioManager::LoadTreadSounds() {
     // Tread clatter ripped from rp_Tnk_sound.brsar (RP_TNK_BANK_SE_01 waves 15/14/13/12),
     // played round-robin. Falls back to the procedural drive hum if the files are missing.
@@ -237,15 +302,16 @@ void AudioManager::Close() {
     }
     m_musicTracks.clear();
 
-    UnloadSound(m_sndShoot);
-    UnloadSound(m_sndRocket);
-    UnloadSound(m_sndRicochet);
-    UnloadSound(m_sndMinePlant);
-    UnloadSound(m_sndMineBeep);
-    UnloadSound(m_sndExplosion);
-    UnloadSound(m_sndBlockBreak);
-    UnloadSound(m_sndEngineIdle);
-    UnloadSound(m_sndEngineDrive);
+    if (IsSoundValid(m_sndShoot)) UnloadSound(m_sndShoot);
+    if (IsSoundValid(m_sndRocket)) UnloadSound(m_sndRocket);
+    if (IsSoundValid(m_sndTankHit)) UnloadSound(m_sndTankHit);
+    if (IsSoundValid(m_sndRicochet)) UnloadSound(m_sndRicochet);
+    if (IsSoundValid(m_sndMinePlant)) UnloadSound(m_sndMinePlant);
+    if (IsSoundValid(m_sndMineBeep)) UnloadSound(m_sndMineBeep);
+    if (IsSoundValid(m_sndExplosion)) UnloadSound(m_sndExplosion);
+    if (IsSoundValid(m_sndBlockBreak)) UnloadSound(m_sndBlockBreak);
+    if (IsSoundValid(m_sndEngineIdle)) UnloadSound(m_sndEngineIdle);
+    if (IsSoundValid(m_sndEngineDrive)) UnloadSound(m_sndEngineDrive);
     for (Sound& s : m_sndTread) {
         if (IsSoundValid(s)) UnloadSound(s);
     }
@@ -308,13 +374,14 @@ void AudioManager::Play(SoundType type) {
     if (!m_initialized) return;
 
     switch (type) {
-        case SoundType::ShootNormal:  PlaySound(m_sndShoot); break;
-        case SoundType::ShootRocket:  PlaySound(m_sndRocket); break;
-        case SoundType::Ricochet:     PlaySound(m_sndRicochet); break;
-        case SoundType::MinePlant:    PlaySound(m_sndMinePlant); break;
-        case SoundType::MineBeep:     PlaySound(m_sndMineBeep); break;
-        case SoundType::Explosion:    PlaySound(m_sndExplosion); break;
-        case SoundType::BlockBreak:   PlaySound(m_sndBlockBreak); break;
+        case SoundType::ShootNormal:  if (IsSoundValid(m_sndShoot)) PlaySound(m_sndShoot); break;
+        case SoundType::ShootRocket:  if (IsSoundValid(m_sndRocket)) PlaySound(m_sndRocket); break;
+        case SoundType::TankHit:      if (IsSoundValid(m_sndTankHit)) PlaySound(m_sndTankHit); break;
+        case SoundType::Ricochet:     if (IsSoundValid(m_sndRicochet)) PlaySound(m_sndRicochet); break;
+        case SoundType::MinePlant:    if (IsSoundValid(m_sndMinePlant)) PlaySound(m_sndMinePlant); break;
+        case SoundType::MineBeep:     if (IsSoundValid(m_sndMineBeep)) PlaySound(m_sndMineBeep); break;
+        case SoundType::Explosion:    if (IsSoundValid(m_sndExplosion)) PlaySound(m_sndExplosion); break;
+        case SoundType::BlockBreak:   if (IsSoundValid(m_sndBlockBreak)) PlaySound(m_sndBlockBreak); break;
         case SoundType::MissionStart: PlayBGM(BGMTrack::MissionIntro); break;
         case SoundType::Victory:      PlayBGM(BGMTrack::VictoryJingle); break;
         case SoundType::GameOver:     PlayBGM(BGMTrack::GameOverJingle); break;

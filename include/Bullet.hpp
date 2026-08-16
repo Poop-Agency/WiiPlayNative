@@ -2,6 +2,7 @@
 
 #include "Common.hpp"
 #include <vector>
+#include "Audio.hpp"
 
 class Level;
 class Tank;
@@ -29,6 +30,8 @@ class BulletManager {
 public:
     BulletManager();
     ~BulletManager();
+
+    std::vector<SoundType> audioEvents;
 
     void Reset();
     void SpawnBullet(uint32_t ownerId, Vector2 pos, Vector2 dir, float speed, int bounces, bool isRocket, Color color);

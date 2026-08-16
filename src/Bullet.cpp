@@ -89,6 +89,7 @@ void BulletManager::Update(float dt, Level& level, std::vector<Tank>& tanks, Min
                 b.active = false;
             } else if (b.bouncesLeft > 0) {
                 // Ricochet bounce!
+                audioEvents.push_back(SoundType::Ricochet);
                 --b.bouncesLeft;
                 b.position = { hitPoint.x + hitNormal.x * 0.05f, hitPoint.y + hitNormal.y * 0.05f };
 
@@ -129,6 +130,7 @@ void BulletManager::Update(float dt, Level& level, std::vector<Tank>& tanks, Min
             float dist = Vector2Distance(b.position, tank.GetPosition());
             if (dist < TANK_RADIUS + BULLET_RADIUS) {
                 tank.TakeDamage(particles);
+                audioEvents.push_back(SoundType::TankHit);
                 b.active = false;
                 break;
             }

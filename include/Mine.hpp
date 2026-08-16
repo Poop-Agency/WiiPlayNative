@@ -2,6 +2,7 @@
 
 #include "Common.hpp"
 #include <vector>
+#include "Audio.hpp"
 
 class Level;
 class Tank;
@@ -26,6 +27,8 @@ class MineManager {
 public:
     MineManager();
     ~MineManager();
+
+    std::vector<SoundType> audioEvents;
 
     void Reset();
     bool PlantMine(uint32_t ownerId, Vector2 pos);

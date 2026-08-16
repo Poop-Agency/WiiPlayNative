@@ -255,7 +255,16 @@ void GameState::Update(float dt, NetworkManager* network) {
 
         // Update Bullets & Mines
         m_bulletManager.Update(dt, m_level, m_tanks, m_mineManager, m_particleManager, true);
+        for (auto snd : m_bulletManager.audioEvents) {
+            m_audioManager.Play(snd);
+        }
+        m_bulletManager.audioEvents.clear();
+
         m_mineManager.Update(dt, m_level, m_tanks, m_particleManager, true);
+        for (auto snd : m_mineManager.audioEvents) {
+            m_audioManager.Play(snd);
+        }
+        m_mineManager.audioEvents.clear();
 
         // Update Particles
         m_particleManager.Update(dt);

@@ -8,6 +8,7 @@
 enum class SoundType {
     ShootNormal,
     ShootRocket,
+    TankHit,
     Ricochet,
     MinePlant,
     MineBeep,
@@ -57,12 +58,14 @@ public:
 
 private:
     void GenerateProceduralSounds();
+    void LoadRippedSounds();
     void LoadTreadSounds();
     void LoadMP3Tracks();
 
     // Sound effects
     Sound m_sndShoot;
     Sound m_sndRocket;
+    Sound m_sndTankHit;
     Sound m_sndRicochet;
     Sound m_sndMinePlant;
     Sound m_sndMineBeep;
@@ -71,6 +74,14 @@ private:
     Sound m_sndMissionStart;
     Sound m_sndVictory;
     Sound m_sndGameOver;
+
+    bool m_hasShoot;
+    bool m_hasTankHit;
+    bool m_hasRicochet;
+    bool m_hasBlockBreak;
+    bool m_hasMinePlant;
+    bool m_hasMineBeep;
+    bool m_hasExplosion;
 
     // Engine & Tread sound
     Sound m_sndEngineIdle;

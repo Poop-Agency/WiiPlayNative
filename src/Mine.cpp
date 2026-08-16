@@ -67,6 +67,7 @@ void MineManager::DetonateMine(size_t index, Level& level, std::vector<Tank>& ta
     // Spawn massive explosion
     Vector3 minePos3D = { minePos.x, 0.3f, minePos.y };
     particles.AddExplosion(minePos3D, MINE_BLAST_RADIUS);
+    audioEvents.push_back(SoundType::Explosion);
 
     // Damage all tanks within blast radius
     for (auto& tank : tanks) {
@@ -88,8 +89,10 @@ void MineManager::DetonateMine(size_t index, Level& level, std::vector<Tank>& ta
             if (level.IsDestructible(gx, gy)) {
                 Vector2 blockWorld = level.GridToWorld(gx, gy);
                 if (Vector2Distance(minePos, blockWorld) <= MINE_BLAST_RADIUS * 1.1f) {
-                    level.DestroyBlock(gx, gy);
-                    particles.AddBlockDebris({ blockWorld.x, 0.5f, blockWorld.y }, { 210, 160, 100, 255 });
+                    if (level.DestroyBlock(gx, gy)) {
+                        particles.AddBlockDebris({ blockWorld.x, 0.5f, blockWorld.y }, { 210, 160, 100, 255 });
+                        audioEvents.push_back(SoundType::BlockBreak);
+                    }
                 }
             }
         }
@@ -155,6 +158,7 @@ void MineManager::Update(float dt, Level& level, std::vector<Tank>& tanks, Parti
         if (m.beepTimer >= 1.0f) {
             m.beepTimer = 0.0f;
             m.flashTimer = 0.12f;
+            audioEvents.push_back(SoundType::MineBeep);
         }
 
         if (m.flashTimer > 0.0f) {
