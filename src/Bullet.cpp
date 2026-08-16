@@ -42,12 +42,6 @@ void BulletManager::SpawnBullet(uint32_t ownerId, Vector2 pos, Vector2 dir, floa
     b.isRocket = isRocket;
     b.lifetime = 10.0f;
     b.active = true;
-    // The muzzle sits on the hull edge, inside the shell-versus-tank contact
-    // distance, so an unarmed shell would kill its own tank on the first frame.
-    // The original compares owner ids before registering a hit; here the shell
-    // simply ignores its owner until it has separated from it, which still lets
-    // your own ricochet come back and kill you.
-    b.leftOwner = false;
     b.color = color;
     b.trailTimer = 0.0f;
 
@@ -133,15 +127,21 @@ void BulletManager::Update(float dt, Level& level, std::vector<Tank>& tanks, Min
         for (auto& tank : tanks) {
             if (!tank.IsAlive()) continue;
 
+            // A shell never damages the tank that fired it. Shell::checkCollisions
+            // loads the owner from +0xDC and compares it against the tank the
+            // query returned, skipping the hit outright when they match
+            // (0x80262fd0..0x80262fdc). There is no arming distance and no
+            // "once it has left me" condition: the exemption holds for the
+            // shell's whole life, ricochets included. +0xDC has a plain setter
+            // at 0x8026399c and getter at 0x802639ac, so it is the owner and
+            // nothing else. This is also why firing point blank at a wall is
+            // harmless -- the shell bounces straight back through its own tank
+            // and simply expires when its ricochet count runs out.
             float dist = Vector2Distance(b.position, tank.GetPosition());
-            bool inContact = dist < TANK_RADIUS + BULLET_RADIUS;
 
-            if (tank.GetId() == b.ownerId && !b.leftOwner) {
-                if (!inContact) b.leftOwner = true;
-                continue;
-            }
+            if (tank.GetId() == b.ownerId) continue;
 
-            if (inContact) {
+            if (dist < TANK_RADIUS + BULLET_RADIUS) {
                 tank.TakeDamage(particles);
                 audioEvents.push_back(SoundType::TankHit);
                 audioEvents.push_back(SoundType::TankExplode);
