@@ -26,7 +26,7 @@ bool AIManager::FindDirectShot(const Tank& enemy, Vector2 targetPos, const Level
     int hitTileX, hitTileY;
 
     if (!level.Raycast(myPos, normDir, dist, hitPoint, hitNormal, hitTileX, hitTileY, true)) {
-        // Direct LOS is totally clear!
+        // Direct Line of Sight is clear
         outAimPos = targetPos;
         return true;
     }
@@ -35,7 +35,8 @@ bool AIManager::FindDirectShot(const Tank& enemy, Vector2 targetPos, const Level
 
 bool AIManager::FindBankShot(const Tank& enemy, Vector2 targetPos, const Level& level, int maxBounces, Vector2& outAimPos) {
     Vector2 myPos = enemy.GetPosition();
-    const int NUM_ANGLES = 48;
+    // Use 64 radial angles for high-precision ricochet calculations (Green tank snipes)
+    const int NUM_ANGLES = (maxBounces >= 2) ? 64 : 48;
 
     for (int i = 0; i < NUM_ANGLES; ++i) {
         float angle = (i * (2.0f * PI / NUM_ANGLES));
@@ -46,7 +47,7 @@ bool AIManager::FindBankShot(const Tank& enemy, Vector2 targetPos, const Level& 
             Vector2 hitPoint, hitNormal;
             int hitTileX, hitTileY;
 
-            bool hit = level.Raycast(curPos, curDir, 40.0f, hitPoint, hitNormal, hitTileX, hitTileY, true);
+            bool hit = level.Raycast(curPos, curDir, 45.0f, hitPoint, hitNormal, hitTileX, hitTileY, true);
             if (!hit) break;
 
             // Check if segment from curPos to hitPoint passes near targetPos
@@ -121,6 +122,33 @@ Vector2 AIManager::FindDodgeVector(const Tank& enemy, const BulletManager& bulle
     return dodgeVec;
 }
 
+static Vector2 AvoidWalls(Vector2 pos, Vector2 desiredDir, const Level& level) {
+    if (Vector2Length(desiredDir) < 0.01f) return desiredDir;
+
+    Vector2 normDesired = { desiredDir.x / Vector2Length(desiredDir), desiredDir.y / Vector2Length(desiredDir) };
+    Vector2 hitPoint, hitNormal;
+    int hitX, hitY;
+
+    // If clear ahead for 1.25 blocks, proceed directly
+    if (!level.Raycast(pos, normDesired, 1.25f * CELL_SIZE, hitPoint, hitNormal, hitX, hitY, true)) {
+        return normDesired;
+    }
+
+    // Otherwise evaluate lateral 45 and 90 degree corridor angles
+    float baseAngle = std::atan2(normDesired.y, normDesired.x);
+    float testOffsets[] = { 0.785f, -0.785f, 1.57f, -1.57f, 2.356f, -2.356f, 3.1415f };
+
+    for (float off : testOffsets) {
+        float testAngle = baseAngle + off;
+        Vector2 testDir = { std::cos(testAngle), std::sin(testAngle) };
+        if (!level.Raycast(pos, testDir, 1.0f * CELL_SIZE, hitPoint, hitNormal, hitX, hitY, true)) {
+            return testDir;
+        }
+    }
+
+    return normDesired;
+}
+
 void AIManager::Update(float dt, std::vector<Tank>& tanks, Level& level, 
                        const BulletManager& bullets, MineManager& mines) 
 {
@@ -160,7 +188,7 @@ void AIManager::UpdateEnemy(Tank& enemy, AIState& state, float dt,
     Vector2 playerPos = targetPlayer->GetPosition();
     Vector2 myPos = enemy.GetPosition();
 
-    // Lead target with velocity
+    // Lead target with velocity for rocket/elite tanks
     Vector2 predictedPlayerPos = playerPos;
     if (enemy.GetConfig().isRocket || enemy.GetType() == TankType::EnemyBlack || enemy.GetType() == TankType::EnemyTeal) {
         predictedPlayerPos = {
@@ -195,17 +223,20 @@ void AIManager::UpdateEnemy(Tank& enemy, AIState& state, float dt,
     if (canShoot && state.shootTimer <= 0.0f) {
         enemy.shootRequested = true;
 
+        // Cooldowns come from TnkGameParam.bin field 36 (frames at 60 Hz)
+        float cooldown = enemy.GetConfig().shootCooldown;
+
         if (enemy.GetType() == TankType::EnemyGreen) {
-            // Rapid bursts
+            // Green sniper fires 2 rapid burst shots, then waits out the full cooldown
             state.burstCount++;
             if (state.burstCount < 2) {
                 state.shootTimer = 0.15f;
             } else {
                 state.burstCount = 0;
-                state.shootTimer = 1.6f + (rand() % 100) / 100.0f;
+                state.shootTimer = cooldown;
             }
         } else {
-            state.shootTimer = 1.0f + (rand() % 100) / 70.0f;
+            state.shootTimer = cooldown * (0.92f + (rand() % 100) / 600.0f);
         }
     }
 
@@ -213,12 +244,12 @@ void AIManager::UpdateEnemy(Tank& enemy, AIState& state, float dt,
     state.moveTimer -= dt;
     Vector2 moveDir = { 0.0f, 0.0f };
 
-    // Check bullet dodging first (Elite tanks: Black, Teal, Purple, White)
+    // Check bullet dodging (Elite dodging tanks: Black, Teal, White)
     if (enemy.GetType() == TankType::EnemyBlack || enemy.GetType() == TankType::EnemyTeal || enemy.GetType() == TankType::EnemyWhite) {
         Vector2 dodge = FindDodgeVector(enemy, bullets);
         if (Vector2Length(dodge) > 0.1f) {
             moveDir = dodge;
-            state.moveTimer = 0.4f;
+            state.moveTimer = 0.35f;
         }
     }
 
@@ -231,18 +262,15 @@ void AIManager::UpdateEnemy(Tank& enemy, AIState& state, float dt,
                 break;
 
             case TankType::EnemyYellow:
-                // Flee from players and lay mines
-                state.mineTimer -= dt;
+                // Flee from players and plant mines
                 if (closestDist < 7.0f) {
-                    moveDir = { myPos.x - playerPos.x, myPos.y - playerPos.y };
+                    Vector2 away = { myPos.x - playerPos.x, myPos.y - playerPos.y };
+                    moveDir = AvoidWalls(myPos, away, level);
                 } else if (state.moveTimer <= 0.0f) {
-                    float randAngle = (rand() % 360) * DEG2RAD;
-                    moveDir = { std::cos(randAngle), std::sin(randAngle) };
+                    float randAngle = (rand() % 8) * (PI * 0.25f);
+                    Vector2 wander = { std::cos(randAngle), std::sin(randAngle) };
+                    moveDir = AvoidWalls(myPos, wander, level);
                     state.moveTimer = 2.0f + (rand() % 100) / 50.0f;
-                }
-                if (state.mineTimer <= 0.0f && closestDist < 5.0f) {
-                    enemy.mineRequested = true;
-                    state.mineTimer = 3.5f;
                 }
                 break;
 
@@ -250,12 +278,14 @@ void AIManager::UpdateEnemy(Tank& enemy, AIState& state, float dt,
             case TankType::EnemyBlack:
             case TankType::EnemyPurple:
             case TankType::EnemyWhite:
-                // Flanking & approach
-                if (closestDist > 8.0f) {
-                    moveDir = { playerPos.x - myPos.x, playerPos.y - myPos.y };
+                // Flanking & pursuit
+                if (closestDist > 7.5f) {
+                    Vector2 towards = { playerPos.x - myPos.x, playerPos.y - myPos.y };
+                    moveDir = AvoidWalls(myPos, towards, level);
                 } else if (state.moveTimer <= 0.0f) {
-                    float randAngle = (rand() % 360) * DEG2RAD;
-                    moveDir = { std::cos(randAngle), std::sin(randAngle) };
+                    float randAngle = (rand() % 8) * (PI * 0.25f);
+                    Vector2 wander = { std::cos(randAngle), std::sin(randAngle) };
+                    moveDir = AvoidWalls(myPos, wander, level);
                     state.moveTimer = 1.5f + (rand() % 100) / 60.0f;
                 }
                 break;
@@ -263,14 +293,25 @@ void AIManager::UpdateEnemy(Tank& enemy, AIState& state, float dt,
             case TankType::EnemyAsh:
             case TankType::EnemyRed:
             default:
-                // Random wander
+                // Random corridor wander
                 if (state.moveTimer <= 0.0f) {
-                    float randAngle = (rand() % 360) * DEG2RAD;
-                    state.moveTarget = { std::cos(randAngle), std::sin(randAngle) };
+                    float randAngle = (rand() % 8) * (PI * 0.25f);
+                    Vector2 wander = { std::cos(randAngle), std::sin(randAngle) };
+                    state.moveTarget = AvoidWalls(myPos, wander, level);
                     state.moveTimer = 2.5f + (rand() % 100) / 40.0f;
                 }
                 moveDir = state.moveTarget;
                 break;
+        }
+    }
+
+    // Mine laying from TnkGameParam.bin field 2:
+    // Yellow 4, Purple 2, White 2, Black 2
+    if (enemy.GetConfig().maxMines > 0) {
+        state.mineTimer -= dt;
+        if (state.mineTimer <= 0.0f && closestDist < 5.0f) {
+            enemy.mineRequested = true;
+            state.mineTimer = (enemy.GetType() == TankType::EnemyYellow) ? 3.0f : 4.0f;
         }
     }
 
