@@ -236,17 +236,12 @@ void AIManager::UpdateEnemy(Tank& enemy, AIState& state, float dt,
 
             case TankType::EnemyYellow:
                 // Flee from players and lay mines
-                state.mineTimer -= dt;
                 if (closestDist < 7.0f) {
                     moveDir = { myPos.x - playerPos.x, myPos.y - playerPos.y };
                 } else if (state.moveTimer <= 0.0f) {
                     float randAngle = (rand() % 360) * DEG2RAD;
                     moveDir = { std::cos(randAngle), std::sin(randAngle) };
                     state.moveTimer = 2.0f + (rand() % 100) / 50.0f;
-                }
-                if (state.mineTimer <= 0.0f && closestDist < 5.0f) {
-                    enemy.mineRequested = true;
-                    state.mineTimer = 3.5f;
                 }
                 break;
 
@@ -275,6 +270,19 @@ void AIManager::UpdateEnemy(Tank& enemy, AIState& state, float dt,
                 }
                 moveDir = state.moveTarget;
                 break;
+        }
+    }
+
+    // TnkGameParam field 2 is the mine allowance and it is non-zero for four
+    // enemies: Yellow 4, Purple 2, White 2, Black 2 (docs/tnkgameparam.md).
+    // Mine laying was hardcoded to the Yellow case, so three of the four tanks
+    // that carry mines never laid one. Drive it off the stat instead. The 5.0
+    // range and the 3.5 s spacing are still ours, not the original's.
+    if (enemy.GetConfig().maxMines > 0) {
+        state.mineTimer -= dt;
+        if (state.mineTimer <= 0.0f && closestDist < 5.0f) {
+            enemy.mineRequested = true;
+            state.mineTimer = 3.5f;
         }
     }
 
