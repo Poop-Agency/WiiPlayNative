@@ -2,6 +2,7 @@
 
 #include "Common.hpp"
 #include <vector>
+#include "Audio.hpp"
 
 class Level;
 class Tank;
@@ -11,8 +12,10 @@ struct Mine {
     uint32_t id;
     uint32_t ownerId;
     Vector2 position;
-    float timer;
-    float armTimer;
+    float age;          // +0xA0, seconds since planted
+    float fuse;         // +0xC0, counts down once fuseLit
+    bool fuseLit;       // +0xD3
+    bool proxArmed;     // +0xD2, a tank came within MINE_ARM_RADIUS
     float beepTimer;
     float beepRate;
     bool active;
@@ -25,9 +28,14 @@ public:
     MineManager();
     ~MineManager();
 
+    std::vector<SoundType> audioEvents;
+
     void Reset();
     bool PlantMine(uint32_t ownerId, Vector2 pos);
     void DetonateMine(size_t index, Level& level, std::vector<Tank>& tanks, ParticleManager& particles);
+    // Shell contact: light the fuse with zero delay, exactly like Mine::detonate
+    // (vt+0xB4, 0x80266e9c) which sets +0xD3 = 1 and +0xC0 = 0.
+    bool DetonateAt(Vector2 point, float radius);
     void Update(float dt, Level& level, std::vector<Tank>& tanks, ParticleManager& particles, bool isServer);
 
     std::vector<Mine>& GetMines() { return m_mines; }

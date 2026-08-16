@@ -1,6 +1,7 @@
 #include "Bullet.hpp"
 #include "Level.hpp"
 #include "Tank.hpp"
+#include "Mine.hpp"
 #include "Particle.hpp"
 #include <cmath>
 
@@ -47,7 +48,7 @@ void BulletManager::SpawnBullet(uint32_t ownerId, Vector2 pos, Vector2 dir, floa
     m_bullets.push_back(b);
 }
 
-void BulletManager::Update(float dt, Level& level, std::vector<Tank>& tanks, ParticleManager& particles, bool isServer) {
+void BulletManager::Update(float dt, Level& level, std::vector<Tank>& tanks, MineManager& mines, ParticleManager& particles, bool isServer) {
     for (size_t i = 0; i < m_bullets.size(); ++i) {
         Bullet& b = m_bullets[i];
         if (!b.active) continue;
@@ -80,18 +81,16 @@ void BulletManager::Update(float dt, Level& level, std::vector<Tank>& tanks, Par
             Vector3 hitPos3D = { hitPoint.x, 0.4f, hitPoint.y };
             Vector3 norm3D = { hitNormal.x, 0.0f, hitNormal.y };
 
-            if (hitTileX >= 0 && hitTileY >= 0 && level.IsDestructible(hitTileX, hitTileY)) {
-                // Destroy cork block
-                level.DestroyBlock(hitTileX, hitTileY);
-                Vector2 blockCenter = level.GridToWorld(hitTileX, hitTileY);
-                particles.AddBlockDebris({ blockCenter.x, 0.5f, blockCenter.y }, { 210, 160, 100, 255 });
-                b.active = false;
-            } else if (b.isRocket) {
+            // Cork blocks survive gunfire in the original -- only a mine blast breaks
+            // them (see MineManager::Explode). Bullets ricochet off cork like any wall.
+            if (b.isRocket) {
                 // Rocket explodes on any impact
+                audioEvents.push_back(SoundType::Explosion);
                 particles.AddExplosion(hitPos3D, 2.5f);
                 b.active = false;
             } else if (b.bouncesLeft > 0) {
                 // Ricochet bounce!
+                audioEvents.push_back(SoundType::Ricochet);
                 --b.bouncesLeft;
                 b.position = { hitPoint.x + hitNormal.x * 0.05f, hitPoint.y + hitNormal.y * 0.05f };
 
@@ -114,13 +113,39 @@ void BulletManager::Update(float dt, Level& level, std::vector<Tank>& tanks, Par
 
         if (!b.active) continue;
 
+        // Shell::checkCollisions (0x80262f78) queries the mine list every frame
+        // with the shell's 6 px radius and sets +0xC3 on a hit, which runs the
+        // same destroy path as hitting a tank. On the mine's side the matching
+        // query sets +0xCE, and the mine think function turns that straight into
+        // vt+0xB4 detonate. So a shell and the mine it touches both die.
+        if (mines.DetonateAt(b.position, BULLET_RADIUS)) {
+            particles.AddRicochetSparks({ b.position.x, 0.4f, b.position.y }, { 0, 1, 0 });
+            b.active = false;
+            continue;
+        }
+
         // Check collision with tanks
         for (auto& tank : tanks) {
             if (!tank.IsAlive()) continue;
 
+            // A shell never damages the tank that fired it. Shell::checkCollisions
+            // loads the owner from +0xDC and compares it against the tank the
+            // query returned, skipping the hit outright when they match
+            // (0x80262fd0..0x80262fdc). There is no arming distance and no
+            // "once it has left me" condition: the exemption holds for the
+            // shell's whole life, ricochets included. +0xDC has a plain setter
+            // at 0x8026399c and getter at 0x802639ac, so it is the owner and
+            // nothing else. This is also why firing point blank at a wall is
+            // harmless -- the shell bounces straight back through its own tank
+            // and simply expires when its ricochet count runs out.
             float dist = Vector2Distance(b.position, tank.GetPosition());
+
+            if (tank.GetId() == b.ownerId) continue;
+
             if (dist < TANK_RADIUS + BULLET_RADIUS) {
                 tank.TakeDamage(particles);
+                audioEvents.push_back(SoundType::TankHit);
+                audioEvents.push_back(SoundType::TankExplode);
                 b.active = false;
                 break;
             }
@@ -134,7 +159,7 @@ void BulletManager::Update(float dt, Level& level, std::vector<Tank>& tanks, Par
             if (!m_bullets[j].active) continue;
 
             float dist = Vector2Distance(m_bullets[i].position, m_bullets[j].position);
-            if (dist < BULLET_RADIUS * 2.5f) {
+            if (dist < BULLET_RADIUS * 2.0f) {
                 Vector3 midPoint = {
                     (m_bullets[i].position.x + m_bullets[j].position.x) * 0.5f,
                     0.4f,

@@ -31,8 +31,10 @@ bool MineManager::PlantMine(uint32_t ownerId, Vector2 pos) {
     m.id = m_nextId++;
     m.ownerId = ownerId;
     m.position = pos;
-    m.timer = MINE_LIFETIME;
-    m.armTimer = 0.6f;
+    m.age = 0.0f;
+    m.fuse = 0.0f;
+    m.fuseLit = false;
+    m.proxArmed = false;
     m.beepTimer = 0.0f;
     m.beepRate = 1.0f;
     m.active = true;
@@ -41,6 +43,18 @@ bool MineManager::PlantMine(uint32_t ownerId, Vector2 pos) {
 
     m_mines.push_back(m);
     return true;
+}
+
+bool MineManager::DetonateAt(Vector2 point, float radius) {
+    bool any = false;
+    for (auto& m : m_mines) {
+        if (!m.active || m.detonated) continue;
+        if (Vector2Distance(point, m.position) >= radius + MINE_RADIUS) continue;
+        m.fuseLit = true;
+        m.fuse = 0.0f;
+        any = true;
+    }
+    return any;
 }
 
 void MineManager::DetonateMine(size_t index, Level& level, std::vector<Tank>& tanks, ParticleManager& particles) {
@@ -53,6 +67,7 @@ void MineManager::DetonateMine(size_t index, Level& level, std::vector<Tank>& ta
     // Spawn massive explosion
     Vector3 minePos3D = { minePos.x, 0.3f, minePos.y };
     particles.AddExplosion(minePos3D, MINE_BLAST_RADIUS);
+    audioEvents.push_back(SoundType::Explosion);
 
     // Damage all tanks within blast radius
     for (auto& tank : tanks) {
@@ -60,6 +75,7 @@ void MineManager::DetonateMine(size_t index, Level& level, std::vector<Tank>& ta
         float dist = Vector2Distance(minePos, tank.GetPosition());
         if (dist < MINE_BLAST_RADIUS) {
             tank.TakeDamage(particles);
+            audioEvents.push_back(SoundType::TankExplode);
         }
     }
 
@@ -74,8 +90,10 @@ void MineManager::DetonateMine(size_t index, Level& level, std::vector<Tank>& ta
             if (level.IsDestructible(gx, gy)) {
                 Vector2 blockWorld = level.GridToWorld(gx, gy);
                 if (Vector2Distance(minePos, blockWorld) <= MINE_BLAST_RADIUS * 1.1f) {
-                    level.DestroyBlock(gx, gy);
-                    particles.AddBlockDebris({ blockWorld.x, 0.5f, blockWorld.y }, { 210, 160, 100, 255 });
+                    if (level.DestroyBlock(gx, gy)) {
+                        particles.AddBlockDebris({ blockWorld.x, 0.5f, blockWorld.y }, { 210, 160, 100, 255 });
+                        audioEvents.push_back(SoundType::BlockBreak);
+                    }
                 }
             }
         }
@@ -96,45 +114,77 @@ void MineManager::Update(float dt, Level& level, std::vector<Tank>& tanks, Parti
         Mine& m = m_mines[i];
         if (!m.active || m.detonated) continue;
 
-        if (m.armTimer > 0.0f) {
-            m.armTimer -= dt;
-        }
+        m.age += dt;
 
-        m.timer -= dt;
-
-        // Check tank proximity
+        // Mine::checkCollisions 0x80267484 runs one proximity query per frame:
+        // until +0xD2 is set it asks for tanks within 90 px, and only afterwards
+        // for tanks within 70 px. So a tank must first enter the arming ring,
+        // then close to the trigger ring on a later frame.
+        float queryRadius = m.proxArmed ? MINE_TRIGGER_RADIUS : MINE_ARM_RADIUS;
         bool tankNearby = false;
         for (const auto& tank : tanks) {
             if (!tank.IsAlive()) continue;
-            float dist = Vector2Distance(m.position, tank.GetPosition());
-            
-            // Immediate detonation on contact if armed
-            if (m.armTimer <= 0.0f && dist < TANK_RADIUS + MINE_RADIUS * 0.5f) {
-                DetonateMine(i, level, tanks, particles);
-                break;
+            // Mine::checkCollisions passes an owner id into both proximity
+            // queries (r5 = +0xBC, 0x802674f4), so the tank that planted the
+            // mine cannot trigger it. Without this the planter is inside the
+            // 90 px arming ring on the frame it plants and blows itself up a
+            // third of a second later. The blast itself still hurts everyone.
+            if (tank.GetId() == m.ownerId) continue;
+            if (Vector2Distance(m.position, tank.GetPosition()) >= queryRadius) continue;
+            tankNearby = true;
+            if (m.proxArmed) {
+                // +0xCD -> +0xC0 = 20 frames, +0xD3 = 1
+                if (!m.fuseLit) {
+                    m.fuseLit = true;
+                    m.fuse = MINE_TRIGGER_FUSE;
+                    audioEvents.push_back(SoundType::MineTrigger);
+                }
+            } else {
+                m.proxArmed = true;
             }
+            break;
+        }
 
-            if (dist < 3.0f) {
-                tankNearby = true;
+        // Chain detonation: another mine inside the summed 12 px radii. This is
+        // not the blast radius path. Mine::checkCollisions runs two contact
+        // queries side by side, both with +0x90 = 12: one against the shell
+        // manager setting +0xCE (0x8026755c) and one against the mine manager
+        // setting +0xCF (0x8026757c). The think function treats both the same,
+        // detonating on either (0x80267a3c..0x80267a50). Contact chaining and
+        // blast chaining both exist; removing this one leaves mines unable to
+        // set each other off by touch.
+        for (size_t j = 0; j < m_mines.size() && !m.fuseLit; ++j) {
+            if (j == i || !m_mines[j].active || m_mines[j].detonated) continue;
+            if (Vector2Distance(m.position, m_mines[j].position) < MINE_RADIUS * 2.0f) {
+                m.fuseLit = true;
+                m.fuse = 0.0f;
             }
         }
 
-        if (!m.active || m.detonated) continue;
+        // Self-arming: +0xA0 reaches 480 frames, then a 120 frame fuse.
+        if (!m.fuseLit && m.age >= MINE_ARM_TIME) {
+            m.fuseLit = true;
+            m.fuse = MINE_FUSE_TIME;
+        }
 
         // Dynamic beep frequency
-        m.beepRate = tankNearby ? 6.0f : (1.0f + (1.0f - (m.timer / MINE_LIFETIME)) * 3.0f);
+        m.beepRate = tankNearby ? 6.0f : (1.0f + (m.age / MINE_LIFETIME) * 3.0f);
         m.beepTimer += dt * m.beepRate;
         if (m.beepTimer >= 1.0f) {
             m.beepTimer = 0.0f;
             m.flashTimer = 0.12f;
+            audioEvents.push_back(SoundType::MineBeep);
         }
 
         if (m.flashTimer > 0.0f) {
             m.flashTimer -= dt;
         }
 
-        if (m.timer <= 0.0f) {
-            DetonateMine(i, level, tanks, particles);
+        if (m.fuseLit) {
+            m.fuse -= dt;
+            if (m.fuse <= 0.0f) {
+                DetonateMine(i, level, tanks, particles);
+            }
         }
     }
 

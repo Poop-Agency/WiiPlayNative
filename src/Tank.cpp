@@ -53,10 +53,9 @@ void Tank::Respawn(Vector2 spawnPos) {
 }
 
 Vector2 Tank::GetBarrelTip() const {
-    float barrelLength = 1.25f;
     return {
-        m_position.x + std::cos(m_turretAngle) * barrelLength,
-        m_position.y + std::sin(m_turretAngle) * barrelLength
+        m_position.x + std::cos(m_turretAngle) * BARREL_LENGTH,
+        m_position.y + std::sin(m_turretAngle) * BARREL_LENGTH
     };
 }
 
@@ -144,6 +143,8 @@ bool Tank::Shoot(BulletManager& bullets, ParticleManager& particles) {
     int activeCount = bullets.CountActiveBulletsForOwner(m_id);
     if (activeCount >= m_config.maxBullets) return false;
 
+    // BARREL_LENGTH is the hull radius, so the muzzle sits on the hull edge and
+    // can never be inside a block.
     Vector2 barrelTip = GetBarrelTip();
     Vector2 shootDir = { std::cos(m_turretAngle), std::sin(m_turretAngle) };
 
@@ -164,7 +165,7 @@ bool Tank::Shoot(BulletManager& bullets, ParticleManager& particles) {
 
     // Recoil
     m_recoil = 0.35f;
-    m_shootCooldown = m_config.isRocket ? 0.45f : 0.22f;
+    m_shootCooldown = m_config.shootCooldown;   // TnkGameParam field 36, frames/60
 
     return true;
 }
