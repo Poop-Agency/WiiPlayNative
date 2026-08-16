@@ -137,25 +137,33 @@ void Tank::Update(float dt, Level& level, ParticleManager& particles) {
     }
 }
 
-bool Tank::Shoot(BulletManager& bullets, ParticleManager& particles) {
+bool Tank::Shoot(BulletManager& bullets, ParticleManager& particles, const Level& level) {
     if (!m_isAlive || m_shootCooldown > 0.0f) return false;
 
     int activeCount = bullets.CountActiveBulletsForOwner(m_id);
     if (activeCount >= m_config.maxBullets) return false;
 
     // BARREL_LENGTH is the hull radius, so the muzzle sits on the hull edge and
-    // can never be inside a block. Fired against a wall the shell spawns already
-    // overlapping it and bursts on its first collision pass -- that is the
-    // point-blank behaviour, no spawn clamp needed.
+    // can never be inside a block.
     Vector2 barrelTip = GetBarrelTip();
     Vector2 shootDir = { std::cos(m_turretAngle), std::sin(m_turretAngle) };
+
+    // Muzzle against a wall: the shell has nowhere to go, so it bursts on the
+    // wall instead of bouncing back into the tank that fired it. Spawning it
+    // with no bounces left makes the existing out-of-bounces branch handle it
+    // on the first collision pass, which is a spark burst and no damage.
+    Vector2 hitPoint, hitNormal;
+    int hitTileX, hitTileY;
+    bool muzzleBlocked = level.Raycast(m_position, shootDir,
+                                       BARREL_LENGTH + BULLET_RADIUS,
+                                       hitPoint, hitNormal, hitTileX, hitTileY, true);
 
     bullets.SpawnBullet(
         m_id,
         barrelTip,
         shootDir,
         m_config.bulletSpeed,
-        m_config.maxBounces,
+        muzzleBlocked ? 0 : m_config.maxBounces,
         m_config.isRocket,
         m_config.turretColor
     );
