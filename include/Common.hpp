@@ -69,14 +69,21 @@ static_assert(MINE_LIFETIME == 10.0f, "mine must live 480 + 120 frames at 60 Hz"
 // Game tiles and IDs matching original Nintendo data
 enum class TileType : uint32_t {
     Empty = 0,
-    CorkBlock = 101,      // Destructible cork wall
-    SolidBlock = 102,     // Indestructible stone wall
-    BlockVariant1 = 103,
-    BlockVariant2 = 104,
-    Hole = 200,           // Trench/hole (bullets fly over, tanks cannot pass)
-    Hole2 = 201,
-    Hole3 = 202,
-    Hole4 = 203,
+    // Two block families, both solid. 101..107 are the cork blocks a mine blast
+    // breaks; 200..207 never break. The low nibble of the builder's packed
+    // argument carries the family and the high nibble the block height 1..8,
+    // which is why the models are named tnk_block_1 / _7 / _8.
+    CorkBlock = 101,
+    CorkBlock2 = 102,
+    CorkBlock3 = 103,
+    CorkBlock4 = 104,
+    CorkBlock5 = 105,
+    CorkBlock6 = 106,
+    CorkBlock7 = 107,
+    SolidBlock = 200,
+    SolidBlock1 = 201,
+    SolidBlock2 = 202,
+    SolidBlock3 = 203,
     SpawnP1 = 300,
     SpawnP2 = 301,
     SpawnEnemyBrown = 400,

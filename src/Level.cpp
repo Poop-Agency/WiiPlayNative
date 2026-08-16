@@ -238,13 +238,23 @@ bool Level::IsSolid(int gx, int gy) const {
 }
 
 bool Level::IsHole(int gx, int gy) const {
-    return false; // Blocks are solid obstacles
+    // Tanks has no hole tile. The field builder at 0x80265e68 accepts exactly two
+    // tile ranges, 100..107 and 200..207, and hands both to the same block create
+    // call; every other value is skipped. So both families are solid obstacles.
+    return false;
 }
 
 bool Level::IsDestructible(int gx, int gy) const {
     if (!IsInBounds(gx, gy)) return false;
     uint32_t val = static_cast<uint32_t>(m_grid[gy * m_width + gx]);
-    return (val == 101 || val == 103);
+    // The builder packs the tile as ((id % 100) << 4) for the 100 family and
+    // (((id - 200) << 4) | 1) for the 200 family. The constructor at 0x802616a8
+    // stores the low two bits in +0xB0, and the block only runs its mine
+    // proximity query when +0xB0 is zero (0x80260b38), which is what sets +0x148
+    // and makes Block::break fire (0x80260f8c). So the 100 family breaks to a
+    // mine and the 200 family never breaks. Nothing anywhere lets a shell set
+    // +0x148, which is why gunfire leaves cork standing.
+    return val >= 101 && val <= 107;
 }
 
 bool Level::DestroyBlock(int gx, int gy) {
