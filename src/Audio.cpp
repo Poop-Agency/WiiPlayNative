@@ -74,6 +74,7 @@ AudioManager::AudioManager()
     , m_sndTankHit{}
     , m_sndTankExplode{}
     , m_hasShoot(false)
+    , m_hasRocket(false)
     , m_hasShootP2(false)
     , m_hasShootEnemy{false}
     , m_hasTankHit(false)
@@ -191,91 +192,69 @@ void AudioManager::GenerateProceduralSounds() {
     SetSoundVolume(m_sndEngineDrive, 0.16f);
 }
 
-void AudioManager::LoadRippedSounds() {
-    Sound s1 = LoadSound("assets/sfx/RP_TNK_SE_SHOOT_1P.wav");
-    if (IsSoundValid(s1)) {
-        UnloadSound(m_sndShoot);
-        m_sndShoot = s1;
-        m_hasShoot = true;
-        SetSoundVolume(m_sndShoot, 0.40f);
-    } else m_hasShoot = false;
-
-    Sound s1_2 = LoadSound("assets/sfx/RP_TNK_SE_SHOOT_2P.wav");
-    if (IsSoundValid(s1_2)) {
-        m_sndShootP2 = s1_2;
-        m_hasShootP2 = true;
-        SetSoundVolume(m_sndShootP2, 0.40f);
-    } else m_hasShootP2 = false;
-
-    for (int i = 0; i < 9; ++i) {
-        std::string filename = "assets/sfx/RP_TNK_SE_SHOOT_ENEMY" + std::to_string(i + 1) + ".wav";
-        Sound se = LoadSound(filename.c_str());
-        if (IsSoundValid(se)) {
-            m_sndShootEnemy[i] = se;
-            m_hasShootEnemy[i] = true;
-            SetSoundVolume(m_sndShootEnemy[i], 0.40f);
-        } else m_hasShootEnemy[i] = false;
+// Wave index -> file under assets/sfx/raw, whose names carry the index as a
+// two-digit prefix followed by the rate and duration. Resolved by scanning the
+// directory so the rest of the filename stays out of the source.
+static std::string RawWavePath(int waveIndex) {
+    char prefix[8];
+    std::snprintf(prefix, sizeof(prefix), "%02d_", waveIndex);
+    std::error_code ec;
+    for (const auto& e : std::filesystem::directory_iterator("assets/sfx/raw", ec)) {
+        std::string n = e.path().filename().string();
+        if (n.rfind(prefix, 0) == 0) return e.path().string();
     }
+    return {};
+}
 
-    // A tank being destroyed is RP_TNK_SE_TNK_DISAPPEAR, not the mine blast.
-    m_sndTankExplode = LoadSound("assets/sfx/RP_TNK_SE_TNK_DISAPPEAR.wav");
-    if (IsSoundValid(m_sndTankExplode)) {
-        m_hasTankExplode = true;
-        SetSoundVolume(m_sndTankExplode, 0.40f);
-    } else m_hasTankExplode = false;
+static bool LoadWave(Sound& dst, int waveIndex, float volume) {
+    std::string path = RawWavePath(waveIndex);
+    if (path.empty()) return false;
+    Sound s = LoadSound(path.c_str());
+    if (!IsSoundValid(s)) return false;
+    if (IsSoundValid(dst)) UnloadSound(dst);
+    dst = s;
+    SetSoundVolume(dst, volume);
+    return true;
+}
 
-    m_sndTankHit = LoadSound("assets/sfx/RP_TNK_SE_HIT.wav");
-    if (IsSoundValid(m_sndTankHit)) {
-        m_hasTankHit = true;
-        SetSoundVolume(m_sndTankHit, 0.40f);
-    } else m_hasTankHit = false;
+// Every index below comes from tools/brsar_map.py, which walks name -> RSEQ
+// label -> RBNK program -> wave index. The RP_TNK_SE_*.wav files in assets/sfx
+// are mis-named and are deliberately not used here.
+//
+//   SHOOT_1P / SHOOT_2P        program 0  -> wave 0
+//   SHOOT_ENEMY1,2,4,5,6,8     program 0  -> wave 0
+//   SHOOT_ENEMY3, ENEMY9       program 21 -> wave 2
+//   SHOOT_ENEMY7               program 20 -> wave 3
+//   HIT and JIRAI_EXP          program 1  -> wave 6   (one sample for both)
+//   REFLECT                    program 2  -> wave 7
+//   JIRAI_SET                  program 3  -> wave 9
+//   JIRAI_EXP_MAE              program 4  -> wave 10  ("mae" = before, the alert)
+//   JIRAI_TIMER                program 5  -> wave 11
+//   BROKEN                     program 18 -> wave 4
+//   TNK_DISAPPEAR              program 17 -> wave 26
+//
+// Enemies 3, 7 and 9 are Teal, Green and Black, the three rocket tanks, which
+// is why only those three carry a firing sound of their own.
+void AudioManager::LoadRippedSounds() {
+    m_hasShoot       = LoadWave(m_sndShoot,       0,  0.40f);
+    m_hasShootP2     = LoadWave(m_sndShootP2,     0,  0.40f);
+    m_hasTankHit     = LoadWave(m_sndTankHit,     6,  0.40f);
+    m_hasExplosion   = LoadWave(m_sndExplosion,   6,  0.45f);
+    m_hasTankExplode = LoadWave(m_sndTankExplode, 26, 0.40f);
+    m_hasRicochet    = LoadWave(m_sndRicochet,    7,  0.35f);
+    m_hasBlockBreak  = LoadWave(m_sndBlockBreak,  4,  0.35f);
+    m_hasMinePlant   = LoadWave(m_sndMinePlant,   9,  0.35f);
+    m_hasMineTrigger = LoadWave(m_sndMineTrigger, 10, 0.35f);
+    m_hasMineBeep    = LoadWave(m_sndMineBeep,    11, 0.25f);
+    m_hasRocket      = LoadWave(m_sndRocket,      2,  0.40f);
 
-    Sound s3 = LoadSound("assets/sfx/RP_TNK_SE_REFLECT.wav");
-    if (IsSoundValid(s3)) {
-        UnloadSound(m_sndRicochet);
-        m_sndRicochet = s3;
-        m_hasRicochet = true;
-        SetSoundVolume(m_sndRicochet, 0.35f);
-    } else m_hasRicochet = false;
-
-    Sound s4 = LoadSound("assets/sfx/RP_TNK_SE_BROKEN.wav");
-    if (IsSoundValid(s4)) {
-        UnloadSound(m_sndBlockBreak);
-        m_sndBlockBreak = s4;
-        m_hasBlockBreak = true;
-        SetSoundVolume(m_sndBlockBreak, 0.35f);
-    } else m_hasBlockBreak = false;
-
-    Sound s5 = LoadSound("assets/sfx/RP_TNK_SE_JIRAI_SET.wav");
-    if (IsSoundValid(s5)) {
-        UnloadSound(m_sndMinePlant);
-        m_sndMinePlant = s5;
-        m_hasMinePlant = true;
-        SetSoundVolume(m_sndMinePlant, 0.35f);
-    } else m_hasMinePlant = false;
-
-    Sound s6 = LoadSound("assets/sfx/RP_TNK_SE_JIRAI_TIMER.wav");
-    if (IsSoundValid(s6)) {
-        UnloadSound(m_sndMineBeep);
-        m_sndMineBeep = s6;
-        m_hasMineBeep = true;
-        SetSoundVolume(m_sndMineBeep, 0.25f);
-    } else m_hasMineBeep = false;
-
-    Sound s6_2 = LoadSound("assets/sfx/RP_TNK_SE_JIRAI_EXP_MAE.wav");
-    if (IsSoundValid(s6_2)) {
-        m_sndMineTrigger = s6_2;
-        m_hasMineTrigger = true;
-        SetSoundVolume(m_sndMineTrigger, 0.35f);
-    } else m_hasMineTrigger = false;
-
-    Sound s7 = LoadSound("assets/sfx/RP_TNK_SE_JIRAI_EXP.wav");
-    if (IsSoundValid(s7)) {
-        UnloadSound(m_sndExplosion);
-        m_sndExplosion = s7;
-        m_hasExplosion = true;
-        SetSoundVolume(m_sndExplosion, 0.45f);
-    } else m_hasExplosion = false;
+    // TankType order in our enum is Brown, Ash, Teal, Yellow, Red, Green,
+    // Purple, White, Black; the retail e_1..e_9 numbering is Brown, Ash, Teal,
+    // Red, Yellow, Purple, Green, White, Black. Indexed here by our enum order.
+    static const int kEnemyWave[9] = { 0, 0, 2, 0, 0, 3, 0, 0, 2 };
+    for (int i = 0; i < 9; ++i) {
+        m_hasShootEnemy[i] = LoadWave(m_sndShootEnemy[i], kEnemyWave[i], 0.40f);
+    }
 }
 
 void AudioManager::LoadTreadSounds() {

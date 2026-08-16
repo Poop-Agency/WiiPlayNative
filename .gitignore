@@ -8,3 +8,4 @@ compile_commands.json
 *.dylib
 *.exe
 .DS_Store
+__pycache__/

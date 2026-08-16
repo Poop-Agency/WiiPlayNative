@@ -92,6 +92,7 @@ private:
     Sound m_sndGameOver;
 
     bool m_hasShoot;
+    bool m_hasRocket;
     bool m_hasShootP2;
     bool m_hasShootEnemy[9];
     bool m_hasTankHit;
