@@ -85,6 +85,7 @@ void BulletManager::Update(float dt, Level& level, std::vector<Tank>& tanks, Min
             // them (see MineManager::Explode). Bullets ricochet off cork like any wall.
             if (b.isRocket) {
                 // Rocket explodes on any impact
+                audioEvents.push_back(SoundType::Explosion);
                 particles.AddExplosion(hitPos3D, 2.5f);
                 b.active = false;
             } else if (b.bouncesLeft > 0) {
