@@ -5,6 +5,10 @@
 #include <algorithm>
 #include <iostream>
 #include <filesystem>
+#include <string>
+
+// Tread click spacing at full speed: 0.373 s cycle / 4 clips, matching the original mix.
+static constexpr float kTreadInterval = 0.0932f;
 
 // Biquad 2-pole Lowpass Filter for clean, band-limited warm synthesis
 struct BiquadLowpass {
@@ -63,6 +67,24 @@ AudioManager::AudioManager()
     , m_initialized(false)
     , m_hasMp3(false)
     , m_enginePlaying(false)
+    , m_sndTread{}
+    , m_hasTread(false)
+    , m_treadIdx(0)
+    , m_treadTimer(0.0f)
+    , m_sndTankHit{}
+    , m_sndTankExplode{}
+    , m_hasShoot(false)
+    , m_hasRocket(false)
+    , m_hasShootP2(false)
+    , m_hasShootEnemy{false}
+    , m_hasTankHit(false)
+    , m_hasTankExplode(false)
+    , m_hasRicochet(false)
+    , m_hasBlockBreak(false)
+    , m_hasMinePlant(false)
+    , m_hasMineBeep(false)
+    , m_hasMineTrigger(false)
+    , m_hasExplosion(false)
 {
 }
 
@@ -76,6 +98,8 @@ void AudioManager::Init() {
     InitAudioDevice();
     if (IsAudioDeviceReady()) {
         GenerateProceduralSounds();
+        LoadRippedSounds();
+        LoadTreadSounds();
         LoadMP3Tracks();
         m_initialized = true;
         std::cout << "Audio Device initialized with pristine, band-limited lowpass audio synthesis." << std::endl;
@@ -168,6 +192,88 @@ void AudioManager::GenerateProceduralSounds() {
     SetSoundVolume(m_sndEngineDrive, 0.16f);
 }
 
+// Wave index -> file under assets/sfx/raw, whose names carry the index as a
+// two-digit prefix followed by the rate and duration. Resolved by scanning the
+// directory so the rest of the filename stays out of the source.
+static std::string RawWavePath(int waveIndex) {
+    char prefix[8];
+    std::snprintf(prefix, sizeof(prefix), "%02d_", waveIndex);
+    std::error_code ec;
+    for (const auto& e : std::filesystem::directory_iterator("assets/sfx/raw", ec)) {
+        std::string n = e.path().filename().string();
+        if (n.rfind(prefix, 0) == 0) return e.path().string();
+    }
+    return {};
+}
+
+static bool LoadWave(Sound& dst, int waveIndex, float volume) {
+    std::string path = RawWavePath(waveIndex);
+    if (path.empty()) return false;
+    Sound s = LoadSound(path.c_str());
+    if (!IsSoundValid(s)) return false;
+    if (IsSoundValid(dst)) UnloadSound(dst);
+    dst = s;
+    SetSoundVolume(dst, volume);
+    return true;
+}
+
+// Every index below comes from tools/brsar_map.py, which walks name -> RSEQ
+// label -> RBNK program -> wave index. The RP_TNK_SE_*.wav files in assets/sfx
+// are mis-named and are deliberately not used here.
+//
+//   SHOOT_1P / SHOOT_2P        program 0  -> wave 0
+//   SHOOT_ENEMY1,2,4,5,6,8     program 0  -> wave 0
+//   SHOOT_ENEMY3, ENEMY9       program 21 -> wave 2
+//   SHOOT_ENEMY7               program 20 -> wave 3
+//   HIT and JIRAI_EXP          program 1  -> wave 6   (one sample for both)
+//   REFLECT                    program 2  -> wave 7
+//   JIRAI_SET                  program 3  -> wave 9
+//   JIRAI_EXP_MAE              program 4  -> wave 10  ("mae" = before, the alert)
+//   JIRAI_TIMER                program 5  -> wave 11
+//   BROKEN                     program 18 -> wave 4
+//   TNK_DISAPPEAR              program 17 -> wave 26
+//
+// Enemies 3, 7 and 9 are Teal, Green and Black, the three rocket tanks, which
+// is why only those three carry a firing sound of their own.
+void AudioManager::LoadRippedSounds() {
+    m_hasShoot       = LoadWave(m_sndShoot,       0,  0.40f);
+    m_hasShootP2     = LoadWave(m_sndShootP2,     0,  0.40f);
+    m_hasTankHit     = LoadWave(m_sndTankHit,     6,  0.40f);
+    m_hasExplosion   = LoadWave(m_sndExplosion,   6,  0.45f);
+    m_hasTankExplode = LoadWave(m_sndTankExplode, 26, 0.40f);
+    m_hasRicochet    = LoadWave(m_sndRicochet,    7,  0.35f);
+    m_hasBlockBreak  = LoadWave(m_sndBlockBreak,  4,  0.35f);
+    m_hasMinePlant   = LoadWave(m_sndMinePlant,   9,  0.35f);
+    m_hasMineTrigger = LoadWave(m_sndMineTrigger, 10, 0.35f);
+    m_hasMineBeep    = LoadWave(m_sndMineBeep,    11, 0.25f);
+    m_hasRocket      = LoadWave(m_sndRocket,      2,  0.40f);
+
+    // TankType order in our enum is Brown, Ash, Teal, Yellow, Red, Green,
+    // Purple, White, Black; the retail e_1..e_9 numbering is Brown, Ash, Teal,
+    // Red, Yellow, Purple, Green, White, Black. Indexed here by our enum order.
+    static const int kEnemyWave[9] = { 0, 0, 2, 0, 0, 3, 0, 0, 2 };
+    for (int i = 0; i < 9; ++i) {
+        m_hasShootEnemy[i] = LoadWave(m_sndShootEnemy[i], kEnemyWave[i], 0.40f);
+    }
+}
+
+void AudioManager::LoadTreadSounds() {
+    // Tread clatter ripped from rp_Tnk_sound.brsar (RP_TNK_BANK_SE_01 waves 15/14/13/12),
+    // played round-robin. Falls back to the procedural drive hum if the files are missing.
+    m_hasTread = true;
+    for (int i = 0; i < 4; ++i) {
+        std::string path = "assets/sfx/tread_" + std::to_string(i) + ".wav";
+        m_sndTread[i] = LoadSound(path.c_str());
+        if (!IsSoundValid(m_sndTread[i])) {
+            m_hasTread = false;
+        } else {
+            SetSoundVolume(m_sndTread[i], 0.22f);
+        }
+    }
+    m_treadIdx = 0;
+    m_treadTimer = 0.0f;
+}
+
 void AudioManager::LoadMP3Tracks() {
     std::string musicDir = "assets/musique/";
 
@@ -211,15 +317,25 @@ void AudioManager::Close() {
     }
     m_musicTracks.clear();
 
-    UnloadSound(m_sndShoot);
-    UnloadSound(m_sndRocket);
-    UnloadSound(m_sndRicochet);
-    UnloadSound(m_sndMinePlant);
-    UnloadSound(m_sndMineBeep);
-    UnloadSound(m_sndExplosion);
-    UnloadSound(m_sndBlockBreak);
-    UnloadSound(m_sndEngineIdle);
-    UnloadSound(m_sndEngineDrive);
+    if (IsSoundValid(m_sndShoot)) UnloadSound(m_sndShoot);
+    if (IsSoundValid(m_sndShootP2)) UnloadSound(m_sndShootP2);
+    for (int i = 0; i < 9; ++i) {
+        if (IsSoundValid(m_sndShootEnemy[i])) UnloadSound(m_sndShootEnemy[i]);
+    }
+    if (IsSoundValid(m_sndRocket)) UnloadSound(m_sndRocket);
+    if (IsSoundValid(m_sndTankHit)) UnloadSound(m_sndTankHit);
+    if (IsSoundValid(m_sndTankExplode)) UnloadSound(m_sndTankExplode);
+    if (IsSoundValid(m_sndRicochet)) UnloadSound(m_sndRicochet);
+    if (IsSoundValid(m_sndMinePlant)) UnloadSound(m_sndMinePlant);
+    if (IsSoundValid(m_sndMineBeep)) UnloadSound(m_sndMineBeep);
+    if (IsSoundValid(m_sndMineTrigger)) UnloadSound(m_sndMineTrigger);
+    if (IsSoundValid(m_sndExplosion)) UnloadSound(m_sndExplosion);
+    if (IsSoundValid(m_sndBlockBreak)) UnloadSound(m_sndBlockBreak);
+    if (IsSoundValid(m_sndEngineIdle)) UnloadSound(m_sndEngineIdle);
+    if (IsSoundValid(m_sndEngineDrive)) UnloadSound(m_sndEngineDrive);
+    for (Sound& s : m_sndTread) {
+        if (IsSoundValid(s)) UnloadSound(s);
+    }
 
     CloseAudioDevice();
     m_initialized = false;
@@ -279,13 +395,26 @@ void AudioManager::Play(SoundType type) {
     if (!m_initialized) return;
 
     switch (type) {
-        case SoundType::ShootNormal:  PlaySound(m_sndShoot); break;
-        case SoundType::ShootRocket:  PlaySound(m_sndRocket); break;
-        case SoundType::Ricochet:     PlaySound(m_sndRicochet); break;
-        case SoundType::MinePlant:    PlaySound(m_sndMinePlant); break;
-        case SoundType::MineBeep:     PlaySound(m_sndMineBeep); break;
-        case SoundType::Explosion:    PlaySound(m_sndExplosion); break;
-        case SoundType::BlockBreak:   PlaySound(m_sndBlockBreak); break;
+        case SoundType::ShootNormal:  if (IsSoundValid(m_sndShoot)) PlaySound(m_sndShoot); break;
+        case SoundType::ShootP2:      if (IsSoundValid(m_sndShootP2)) PlaySound(m_sndShootP2); break;
+        case SoundType::ShootEnemy1:  if (IsSoundValid(m_sndShootEnemy[0])) PlaySound(m_sndShootEnemy[0]); break;
+        case SoundType::ShootEnemy2:  if (IsSoundValid(m_sndShootEnemy[1])) PlaySound(m_sndShootEnemy[1]); break;
+        case SoundType::ShootEnemy3:  if (IsSoundValid(m_sndShootEnemy[2])) PlaySound(m_sndShootEnemy[2]); break;
+        case SoundType::ShootEnemy4:  if (IsSoundValid(m_sndShootEnemy[3])) PlaySound(m_sndShootEnemy[3]); break;
+        case SoundType::ShootEnemy5:  if (IsSoundValid(m_sndShootEnemy[4])) PlaySound(m_sndShootEnemy[4]); break;
+        case SoundType::ShootEnemy6:  if (IsSoundValid(m_sndShootEnemy[5])) PlaySound(m_sndShootEnemy[5]); break;
+        case SoundType::ShootEnemy7:  if (IsSoundValid(m_sndShootEnemy[6])) PlaySound(m_sndShootEnemy[6]); break;
+        case SoundType::ShootEnemy8:  if (IsSoundValid(m_sndShootEnemy[7])) PlaySound(m_sndShootEnemy[7]); break;
+        case SoundType::ShootEnemy9:  if (IsSoundValid(m_sndShootEnemy[8])) PlaySound(m_sndShootEnemy[8]); break;
+        case SoundType::ShootRocket:  if (IsSoundValid(m_sndRocket)) PlaySound(m_sndRocket); break;
+        case SoundType::TankHit:      if (IsSoundValid(m_sndTankHit)) PlaySound(m_sndTankHit); break;
+        case SoundType::TankExplode:  if (IsSoundValid(m_sndTankExplode)) PlaySound(m_sndTankExplode); break;
+        case SoundType::Ricochet:     if (IsSoundValid(m_sndRicochet)) PlaySound(m_sndRicochet); break;
+        case SoundType::MinePlant:    if (IsSoundValid(m_sndMinePlant)) PlaySound(m_sndMinePlant); break;
+        case SoundType::MineBeep:     if (IsSoundValid(m_sndMineBeep)) PlaySound(m_sndMineBeep); break;
+        case SoundType::MineTrigger:  if (IsSoundValid(m_sndMineTrigger)) PlaySound(m_sndMineTrigger); break;
+        case SoundType::Explosion:    if (IsSoundValid(m_sndExplosion)) PlaySound(m_sndExplosion); break;
+        case SoundType::BlockBreak:   if (IsSoundValid(m_sndBlockBreak)) PlaySound(m_sndBlockBreak); break;
         case SoundType::MissionStart: PlayBGM(BGMTrack::MissionIntro); break;
         case SoundType::Victory:      PlayBGM(BGMTrack::VictoryJingle); break;
         case SoundType::GameOver:     PlayBGM(BGMTrack::GameOverJingle); break;
@@ -308,17 +437,30 @@ void AudioManager::UpdateEngineAudio(bool isMoving, float speedRatio, int moving
     if (isMoving) {
         float drivePitch = 0.95f + speedRatio * 0.20f;
         SetSoundPitch(m_sndEngineDrive, drivePitch);
-        SetSoundVolume(m_sndEngineDrive, 0.16f);
+        SetSoundVolume(m_sndEngineDrive, m_hasTread ? 0.09f : 0.16f);
         if (!IsSoundPlaying(m_sndEngineDrive)) {
             PlaySound(m_sndEngineDrive);
         }
 
         SetSoundPitch(m_sndEngineIdle, 1.1f);
         SetSoundVolume(m_sndEngineIdle, 0.05f);
+
+        if (m_hasTread) {
+            // 93 ms between clicks at full speed = the 0.373 s 4-clip cycle of the original.
+            // ponytail: linear inverse scaling, clamped; swap for a curve if slow tanks sound off.
+            float interval = kTreadInterval / std::max(speedRatio, 0.35f);
+            m_treadTimer += GetFrameTime();
+            if (m_treadTimer >= interval) {
+                m_treadTimer = 0.0f;
+                PlaySound(m_sndTread[m_treadIdx]);
+                m_treadIdx = (m_treadIdx + 1) % 4;
+            }
+        }
     } else {
         if (IsSoundPlaying(m_sndEngineDrive)) {
             StopSound(m_sndEngineDrive);
         }
+        m_treadTimer = kTreadInterval;   // next move clicks immediately
         float ambient = std::min(0.14f, 0.08f + movingEnemiesCount * 0.02f);
         SetSoundPitch(m_sndEngineIdle, 0.90f);
         SetSoundVolume(m_sndEngineIdle, ambient);
@@ -329,6 +471,8 @@ void AudioManager::StopEngineAudio() {
     if (m_enginePlaying) {
         StopSound(m_sndEngineIdle);
         StopSound(m_sndEngineDrive);
+        m_treadTimer = kTreadInterval;
+        m_treadIdx = 0;
         m_enginePlaying = false;
     }
 }
