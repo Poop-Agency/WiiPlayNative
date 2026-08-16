@@ -3,6 +3,7 @@
 
   python3 tools/dol.py map                    section table
   python3 tools/dol.py dis 0x800a1234 [n]     disassemble n instructions at a VMA
+  python3 tools/dol.py fn 0x800a1234          bracket the function containing a VMA
   python3 tools/dol.py find u32 0x66          VMAs of a 32-bit immediate/word
   python3 tools/dol.py find f32 1.25          VMAs of a float constant
   python3 tools/dol.py xref 0x803247c0        instructions whose lis/addi pair builds that VMA
@@ -59,11 +60,57 @@ def _decode(chunk):
     return out
 
 
+# r2 is the read-only small-data base, set in __init_registers at 0x8006330c.
+# Float constants live below it, so `lfs fN, -0x1234(r2)` is a literal.
+SDA2 = 0x8045EF00
+
+
+def _f32(vma):
+    d, off = to_off(vma)
+    return struct.unpack_from(">f", d, off)[0]
+
+
 def dis(vma, count=40):
     d, off = to_off(vma)
     raw = d[off:off + count * 4]
     for i, line in enumerate(_decode(raw)):
-        print("%08x  %08x  %s" % (vma + i * 4, struct.unpack_from(">I", raw, i * 4)[0], line))
+        a = vma + i * 4
+        w = struct.unpack_from(">I", raw, i * 4)[0]
+        note = ""
+        if (w >> 26) in (48, 52) and ((w >> 16) & 0x1F) == 2:
+            disp = w & 0xFFFF
+            disp -= 0x10000 if disp & 0x8000 else 0
+            try:
+                note = "   ; = %g" % _f32(SDA2 + disp)
+            except SystemExit:
+                pass
+        elif (w >> 26) == 18:
+            t = w & 0x03FFFFFC
+            t -= 0x04000000 if t & 0x02000000 else 0
+            note = "   ; -> %08x" % ((a + t) if not (w & 2) else t)
+        print("%08x  %08x  %-34s%s" % (a, w, line, note))
+
+
+def _w32(vma):
+    d, off = to_off(vma)
+    return struct.unpack_from(">I", d, off)[0]
+
+
+def bounds(vma):
+    """Start and end of the function containing a VMA.
+
+    A Metrowerks prologue is `stwu r1, -N(r1)` reached right after a blr or an
+    unconditional branch, which is enough to bracket a function here.
+    """
+    p = vma
+    while p > 0x80004000:
+        if (_w32(p) >> 16) == 0x9421 and (_w32(p - 4) == 0x4E800020 or (_w32(p - 4) >> 26) == 18):
+            break
+        p -= 4
+    e = vma
+    while _w32(e) != 0x4E800020:
+        e += 4
+    return p, e
 
 
 def find(kind, value):
@@ -116,6 +163,9 @@ if __name__ == "__main__":
         print("%-7s %-10s %-10s %s" % ("sec", "fileoff", "vma", "size"))
         for n, o, v, s in secs:
             print("%-7s %-10s %-10s %s" % (n, hex(o), hex(v), hex(s)))
+    elif sys.argv[1] == "fn":
+        a, b = bounds(int(sys.argv[2], 0))
+        print("start %08x  end %08x  (%d instructions)" % (a, b, (b - a) // 4 + 1))
     elif sys.argv[1] == "dis":
         dis(int(sys.argv[2], 0), int(sys.argv[3]) if len(sys.argv) > 3 else 40)
     elif sys.argv[1] == "find":
