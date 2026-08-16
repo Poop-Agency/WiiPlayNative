@@ -191,6 +191,27 @@ void GameState::ProcessLocalInput(Camera3D& camera, uint32_t localPlayerId) {
                                 (IsGamepadAvailable(0) && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_TRIGGER_1));
 }
 
+// RP_TNK_SE_SHOOT_ENEMY1..9 are indexed in the order the retail parameter file
+// stores its tank records, which is Brown, Ash, Teal, Red, Yellow, Purple,
+// Green, White, Black. Our TankType enum swaps Yellow with Red and Green with
+// Purple, so the enemy index cannot be computed by subtraction; the mapping is
+// spelled out instead. The same order names the tnk_tank_e_1..e_9 models.
+static SoundType ShootSoundFor(TankType type) {
+    switch (type) {
+        case TankType::Player2:     return SoundType::ShootP2;
+        case TankType::EnemyBrown:  return SoundType::ShootEnemy1;
+        case TankType::EnemyAsh:    return SoundType::ShootEnemy2;
+        case TankType::EnemyTeal:   return SoundType::ShootEnemy3;
+        case TankType::EnemyRed:    return SoundType::ShootEnemy4;
+        case TankType::EnemyYellow: return SoundType::ShootEnemy5;
+        case TankType::EnemyPurple: return SoundType::ShootEnemy6;
+        case TankType::EnemyGreen:  return SoundType::ShootEnemy7;
+        case TankType::EnemyWhite:  return SoundType::ShootEnemy8;
+        case TankType::EnemyBlack:  return SoundType::ShootEnemy9;
+        default:                    return SoundType::ShootNormal;
+    }
+}
+
 void GameState::Update(float dt, NetworkManager* network) {
     // Always update audio streamer
     m_audioManager.Update(dt);
@@ -219,11 +240,7 @@ void GameState::Update(float dt, NetworkManager* network) {
 
             if (tank.shootRequested) {
                 if (tank.Shoot(m_bulletManager, m_particleManager)) {
-                    if (tank.GetConfig().isRocket) {
-                        m_audioManager.Play(SoundType::ShootRocket);
-                    } else {
-                        m_audioManager.Play(SoundType::ShootNormal);
-                    }
+                    m_audioManager.Play(ShootSoundFor(tank.GetConfig().type));
                 }
             }
 

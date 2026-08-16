@@ -137,6 +137,7 @@ void MineManager::Update(float dt, Level& level, std::vector<Tank>& tanks, Parti
                 if (!m.fuseLit) {
                     m.fuseLit = true;
                     m.fuse = MINE_TRIGGER_FUSE;
+                    audioEvents.push_back(SoundType::MineTrigger);
                 }
             } else {
                 m.proxArmed = true;
@@ -144,7 +145,14 @@ void MineManager::Update(float dt, Level& level, std::vector<Tank>& tanks, Parti
             break;
         }
 
-        // Chain detonation: another mine inside the summed 12 px radii.
+        // Chain detonation: another mine inside the summed 12 px radii. This is
+        // not the blast radius path. Mine::checkCollisions runs two contact
+        // queries side by side, both with +0x90 = 12: one against the shell
+        // manager setting +0xCE (0x8026755c) and one against the mine manager
+        // setting +0xCF (0x8026757c). The think function treats both the same,
+        // detonating on either (0x80267a3c..0x80267a50). Contact chaining and
+        // blast chaining both exist; removing this one leaves mines unable to
+        // set each other off by touch.
         for (size_t j = 0; j < m_mines.size() && !m.fuseLit; ++j) {
             if (j == i || !m_mines[j].active || m_mines[j].detonated) continue;
             if (Vector2Distance(m.position, m_mines[j].position) < MINE_RADIUS * 2.0f) {

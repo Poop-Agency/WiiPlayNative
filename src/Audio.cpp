@@ -74,12 +74,15 @@ AudioManager::AudioManager()
     , m_sndTankHit{}
     , m_sndTankExplode{}
     , m_hasShoot(false)
+    , m_hasShootP2(false)
+    , m_hasShootEnemy{false}
     , m_hasTankHit(false)
     , m_hasTankExplode(false)
     , m_hasRicochet(false)
     , m_hasBlockBreak(false)
     , m_hasMinePlant(false)
     , m_hasMineBeep(false)
+    , m_hasMineTrigger(false)
     , m_hasExplosion(false)
 {
 }
@@ -197,6 +200,23 @@ void AudioManager::LoadRippedSounds() {
         SetSoundVolume(m_sndShoot, 0.40f);
     } else m_hasShoot = false;
 
+    Sound s1_2 = LoadSound("assets/sfx/RP_TNK_SE_SHOOT_2P.wav");
+    if (IsSoundValid(s1_2)) {
+        m_sndShootP2 = s1_2;
+        m_hasShootP2 = true;
+        SetSoundVolume(m_sndShootP2, 0.40f);
+    } else m_hasShootP2 = false;
+
+    for (int i = 0; i < 9; ++i) {
+        std::string filename = "assets/sfx/RP_TNK_SE_SHOOT_ENEMY" + std::to_string(i + 1) + ".wav";
+        Sound se = LoadSound(filename.c_str());
+        if (IsSoundValid(se)) {
+            m_sndShootEnemy[i] = se;
+            m_hasShootEnemy[i] = true;
+            SetSoundVolume(m_sndShootEnemy[i], 0.40f);
+        } else m_hasShootEnemy[i] = false;
+    }
+
     // A tank being destroyed is RP_TNK_SE_TNK_DISAPPEAR, not the mine blast.
     m_sndTankExplode = LoadSound("assets/sfx/RP_TNK_SE_TNK_DISAPPEAR.wav");
     if (IsSoundValid(m_sndTankExplode)) {
@@ -241,6 +261,13 @@ void AudioManager::LoadRippedSounds() {
         m_hasMineBeep = true;
         SetSoundVolume(m_sndMineBeep, 0.25f);
     } else m_hasMineBeep = false;
+
+    Sound s6_2 = LoadSound("assets/sfx/RP_TNK_SE_JIRAI_EXP_MAE.wav");
+    if (IsSoundValid(s6_2)) {
+        m_sndMineTrigger = s6_2;
+        m_hasMineTrigger = true;
+        SetSoundVolume(m_sndMineTrigger, 0.35f);
+    } else m_hasMineTrigger = false;
 
     Sound s7 = LoadSound("assets/sfx/RP_TNK_SE_JIRAI_EXP.wav");
     if (IsSoundValid(s7)) {
@@ -312,12 +339,17 @@ void AudioManager::Close() {
     m_musicTracks.clear();
 
     if (IsSoundValid(m_sndShoot)) UnloadSound(m_sndShoot);
+    if (IsSoundValid(m_sndShootP2)) UnloadSound(m_sndShootP2);
+    for (int i = 0; i < 9; ++i) {
+        if (IsSoundValid(m_sndShootEnemy[i])) UnloadSound(m_sndShootEnemy[i]);
+    }
     if (IsSoundValid(m_sndRocket)) UnloadSound(m_sndRocket);
     if (IsSoundValid(m_sndTankHit)) UnloadSound(m_sndTankHit);
     if (IsSoundValid(m_sndTankExplode)) UnloadSound(m_sndTankExplode);
     if (IsSoundValid(m_sndRicochet)) UnloadSound(m_sndRicochet);
     if (IsSoundValid(m_sndMinePlant)) UnloadSound(m_sndMinePlant);
     if (IsSoundValid(m_sndMineBeep)) UnloadSound(m_sndMineBeep);
+    if (IsSoundValid(m_sndMineTrigger)) UnloadSound(m_sndMineTrigger);
     if (IsSoundValid(m_sndExplosion)) UnloadSound(m_sndExplosion);
     if (IsSoundValid(m_sndBlockBreak)) UnloadSound(m_sndBlockBreak);
     if (IsSoundValid(m_sndEngineIdle)) UnloadSound(m_sndEngineIdle);
@@ -385,12 +417,23 @@ void AudioManager::Play(SoundType type) {
 
     switch (type) {
         case SoundType::ShootNormal:  if (IsSoundValid(m_sndShoot)) PlaySound(m_sndShoot); break;
+        case SoundType::ShootP2:      if (IsSoundValid(m_sndShootP2)) PlaySound(m_sndShootP2); break;
+        case SoundType::ShootEnemy1:  if (IsSoundValid(m_sndShootEnemy[0])) PlaySound(m_sndShootEnemy[0]); break;
+        case SoundType::ShootEnemy2:  if (IsSoundValid(m_sndShootEnemy[1])) PlaySound(m_sndShootEnemy[1]); break;
+        case SoundType::ShootEnemy3:  if (IsSoundValid(m_sndShootEnemy[2])) PlaySound(m_sndShootEnemy[2]); break;
+        case SoundType::ShootEnemy4:  if (IsSoundValid(m_sndShootEnemy[3])) PlaySound(m_sndShootEnemy[3]); break;
+        case SoundType::ShootEnemy5:  if (IsSoundValid(m_sndShootEnemy[4])) PlaySound(m_sndShootEnemy[4]); break;
+        case SoundType::ShootEnemy6:  if (IsSoundValid(m_sndShootEnemy[5])) PlaySound(m_sndShootEnemy[5]); break;
+        case SoundType::ShootEnemy7:  if (IsSoundValid(m_sndShootEnemy[6])) PlaySound(m_sndShootEnemy[6]); break;
+        case SoundType::ShootEnemy8:  if (IsSoundValid(m_sndShootEnemy[7])) PlaySound(m_sndShootEnemy[7]); break;
+        case SoundType::ShootEnemy9:  if (IsSoundValid(m_sndShootEnemy[8])) PlaySound(m_sndShootEnemy[8]); break;
         case SoundType::ShootRocket:  if (IsSoundValid(m_sndRocket)) PlaySound(m_sndRocket); break;
         case SoundType::TankHit:      if (IsSoundValid(m_sndTankHit)) PlaySound(m_sndTankHit); break;
         case SoundType::TankExplode:  if (IsSoundValid(m_sndTankExplode)) PlaySound(m_sndTankExplode); break;
         case SoundType::Ricochet:     if (IsSoundValid(m_sndRicochet)) PlaySound(m_sndRicochet); break;
         case SoundType::MinePlant:    if (IsSoundValid(m_sndMinePlant)) PlaySound(m_sndMinePlant); break;
         case SoundType::MineBeep:     if (IsSoundValid(m_sndMineBeep)) PlaySound(m_sndMineBeep); break;
+        case SoundType::MineTrigger:  if (IsSoundValid(m_sndMineTrigger)) PlaySound(m_sndMineTrigger); break;
         case SoundType::Explosion:    if (IsSoundValid(m_sndExplosion)) PlaySound(m_sndExplosion); break;
         case SoundType::BlockBreak:   if (IsSoundValid(m_sndBlockBreak)) PlaySound(m_sndBlockBreak); break;
         case SoundType::MissionStart: PlayBGM(BGMTrack::MissionIntro); break;
