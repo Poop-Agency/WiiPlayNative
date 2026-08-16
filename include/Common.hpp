@@ -19,16 +19,52 @@ constexpr float ARENA_HEIGHT = GRID_HEIGHT * CELL_SIZE;
 constexpr float ARENA_HALF_W = ARENA_WIDTH * 0.5f;
 constexpr float ARENA_HALF_H = ARENA_HEIGHT * 0.5f;
 
-// Tank and physical constants
-constexpr float TANK_RADIUS = 0.75f;
+// One original pixel in world units. A block is 32 px wide and one grid cell,
+// so CELL_SIZE / 32 converts every radius main.dol stores in pixels.
+constexpr float PX = CELL_SIZE / 32.0f;          // 0.0625
+
+// Collision radii, all read out of main.dol. Each game object keeps its radius
+// in field +0x90 and its class' collide method adds its own hard-coded radius
+// to the other object's +0x90, so the contact distance is the sum of the two.
+//   tank   15 px  Tank::collide  0x8025a3a4 (lfs 15.0, sdata2 0x8045a6e4)
+//   shell   6 px  Shell::check   0x80262f80/0x80262fa4/0x8026303c
+//   mine   12 px  Mine::collide  0x80267110 (lfs 12.0, sdata2 0x8045a82c)
+constexpr float TANK_RADIUS = 15.0f * PX;        // 0.9375
 constexpr float TANK_HEIGHT = 0.7f;
-constexpr float BULLET_RADIUS = 0.18f;
-constexpr float BARREL_LENGTH = 1.25f;   // longer than TANK_RADIUS: muzzle can overlap a wall
+constexpr float BULLET_RADIUS = 6.0f * PX;       // 0.375
+constexpr float MINE_RADIUS = 12.0f * PX;        // 0.75
+
+// The muzzle is the `cannon` bone of G3D/tnk_tank.brres, not a DOL constant.
+// Clamped to the hull radius so the barrel tip can never sit inside a block:
+// that is what makes a point-blank shot burst on the wall instead of spawning
+// past it. Marked inferred -- the model would give the exact bone offset.
+constexpr float BARREL_LENGTH = TANK_RADIUS;
+
 constexpr float BULLET_SPEED_NORMAL = 11.25f;   // field 37 = 3 px/frame at 60 Hz
 constexpr float BULLET_SPEED_FAST = BULLET_SPEED_NORMAL * 2.0f;   // TnkGameParam field 37: 6 vs 3
-constexpr float MINE_RADIUS = 0.45f;
-constexpr float MINE_BLAST_RADIUS = 3.2f;
-constexpr float MINE_LIFETIME = 10.0f;
+
+// Mine timing and radii, from Mine::checkCollisions 0x80267484 and the mine
+// think function 0x802679f8. Frame counts are at 60 Hz.
+//   +0xA0 reaches 480  -> arm, then +0xC0 = 120 frame fuse   (8 s + 2 s)
+//   tank within 90 px  -> +0xD2 armed          (lfs 90, 0x802674d8)
+//   tank within 70 px  -> +0xC0 = 20 frame fuse (lfs 70, 0x8026751c)
+//   blast radius +0xC8 = 80 px                  (stfs 80,  0x80267984)
+constexpr float MINE_ARM_RADIUS = 90.0f * PX;        // 5.625
+constexpr float MINE_TRIGGER_RADIUS = 70.0f * PX;    // 4.375
+constexpr float MINE_BLAST_RADIUS = 80.0f * PX;      // 5.0
+constexpr float MINE_ARM_TIME = 480.0f / 60.0f;      // 8.0 s
+constexpr float MINE_FUSE_TIME = 120.0f / 60.0f;     // 2.0 s
+constexpr float MINE_TRIGGER_FUSE = 20.0f / 60.0f;   // 0.333 s
+constexpr float MINE_LIFETIME = MINE_ARM_TIME + MINE_FUSE_TIME;   // 10.0 s
+
+// Guards on the pixel conversion: if CELL_SIZE or PX ever drifts these stop the
+// build instead of silently rescaling every collision in the game.
+static_assert(PX * 32.0f == CELL_SIZE, "one block must be 32 original pixels");
+static_assert(TANK_RADIUS == 0.9375f && BULLET_RADIUS == 0.375f && MINE_RADIUS == 0.75f,
+              "collision radii must stay at the 15/6/12 px values read from main.dol");
+static_assert(BARREL_LENGTH <= TANK_RADIUS,
+              "muzzle must stay inside the hull or point-blank shots spawn past the wall");
+static_assert(MINE_LIFETIME == 10.0f, "mine must live 480 + 120 frames at 60 Hz");
 
 // Game tiles and IDs matching original Nintendo data
 enum class TileType : uint32_t {

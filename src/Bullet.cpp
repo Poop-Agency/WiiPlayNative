@@ -1,6 +1,7 @@
 #include "Bullet.hpp"
 #include "Level.hpp"
 #include "Tank.hpp"
+#include "Mine.hpp"
 #include "Particle.hpp"
 #include <cmath>
 
@@ -47,7 +48,7 @@ void BulletManager::SpawnBullet(uint32_t ownerId, Vector2 pos, Vector2 dir, floa
     m_bullets.push_back(b);
 }
 
-void BulletManager::Update(float dt, Level& level, std::vector<Tank>& tanks, ParticleManager& particles, bool isServer) {
+void BulletManager::Update(float dt, Level& level, std::vector<Tank>& tanks, MineManager& mines, ParticleManager& particles, bool isServer) {
     for (size_t i = 0; i < m_bullets.size(); ++i) {
         Bullet& b = m_bullets[i];
         if (!b.active) continue;
@@ -110,6 +111,17 @@ void BulletManager::Update(float dt, Level& level, std::vector<Tank>& tanks, Par
 
         if (!b.active) continue;
 
+        // Shell::checkCollisions (0x80262f78) queries the mine list every frame
+        // with the shell's 6 px radius and sets +0xC3 on a hit, which runs the
+        // same destroy path as hitting a tank. On the mine's side the matching
+        // query sets +0xCE, and the mine think function turns that straight into
+        // vt+0xB4 detonate. So a shell and the mine it touches both die.
+        if (mines.DetonateAt(b.position, BULLET_RADIUS)) {
+            particles.AddRicochetSparks({ b.position.x, 0.4f, b.position.y }, { 0, 1, 0 });
+            b.active = false;
+            continue;
+        }
+
         // Check collision with tanks
         for (auto& tank : tanks) {
             if (!tank.IsAlive()) continue;
@@ -130,7 +142,7 @@ void BulletManager::Update(float dt, Level& level, std::vector<Tank>& tanks, Par
             if (!m_bullets[j].active) continue;
 
             float dist = Vector2Distance(m_bullets[i].position, m_bullets[j].position);
-            if (dist < BULLET_RADIUS * 2.5f) {
+            if (dist < BULLET_RADIUS * 2.0f) {
                 Vector3 midPoint = {
                     (m_bullets[i].position.x + m_bullets[j].position.x) * 0.5f,
                     0.4f,

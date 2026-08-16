@@ -137,26 +137,18 @@ void Tank::Update(float dt, Level& level, ParticleManager& particles) {
     }
 }
 
-bool Tank::Shoot(BulletManager& bullets, ParticleManager& particles, const Level& level) {
+bool Tank::Shoot(BulletManager& bullets, ParticleManager& particles) {
     if (!m_isAlive || m_shootCooldown > 0.0f) return false;
 
     int activeCount = bullets.CountActiveBulletsForOwner(m_id);
     if (activeCount >= m_config.maxBullets) return false;
 
+    // BARREL_LENGTH is the hull radius, so the muzzle sits on the hull edge and
+    // can never be inside a block. Fired against a wall the shell spawns already
+    // overlapping it and bursts on its first collision pass -- that is the
+    // point-blank behaviour, no spawn clamp needed.
     Vector2 barrelTip = GetBarrelTip();
     Vector2 shootDir = { std::cos(m_turretAngle), std::sin(m_turretAngle) };
-
-    // The barrel (1.25) is longer than the tank radius (0.75), so nose-to-wall the tip
-    // sits inside or past the block and the bullet used to appear on the far side.
-    // Clamp the spawn to just short of whatever the barrel crosses.
-    Vector2 hitPoint, hitNormal;
-    int hitTileX, hitTileY;
-    if (level.Raycast(m_position, shootDir, BARREL_LENGTH, hitPoint, hitNormal, hitTileX, hitTileY, true)) {
-        barrelTip = {
-            hitPoint.x - shootDir.x * (BULLET_RADIUS + 0.02f),
-            hitPoint.y - shootDir.y * (BULLET_RADIUS + 0.02f)
-        };
-    }
 
     bullets.SpawnBullet(
         m_id,
@@ -175,7 +167,7 @@ bool Tank::Shoot(BulletManager& bullets, ParticleManager& particles, const Level
 
     // Recoil
     m_recoil = 0.35f;
-    m_shootCooldown = m_config.isRocket ? 0.45f : 0.22f;
+    m_shootCooldown = m_config.shootCooldown;   // TnkGameParam field 36, frames/60
 
     return true;
 }

@@ -31,8 +31,10 @@ bool MineManager::PlantMine(uint32_t ownerId, Vector2 pos) {
     m.id = m_nextId++;
     m.ownerId = ownerId;
     m.position = pos;
-    m.timer = MINE_LIFETIME;
-    m.armTimer = 0.6f;
+    m.age = 0.0f;
+    m.fuse = 0.0f;
+    m.fuseLit = false;
+    m.proxArmed = false;
     m.beepTimer = 0.0f;
     m.beepRate = 1.0f;
     m.active = true;
@@ -41,6 +43,18 @@ bool MineManager::PlantMine(uint32_t ownerId, Vector2 pos) {
 
     m_mines.push_back(m);
     return true;
+}
+
+bool MineManager::DetonateAt(Vector2 point, float radius) {
+    bool any = false;
+    for (auto& m : m_mines) {
+        if (!m.active || m.detonated) continue;
+        if (Vector2Distance(point, m.position) >= radius + MINE_RADIUS) continue;
+        m.fuseLit = true;
+        m.fuse = 0.0f;
+        any = true;
+    }
+    return any;
 }
 
 void MineManager::DetonateMine(size_t index, Level& level, std::vector<Tank>& tanks, ParticleManager& particles) {
@@ -96,33 +110,47 @@ void MineManager::Update(float dt, Level& level, std::vector<Tank>& tanks, Parti
         Mine& m = m_mines[i];
         if (!m.active || m.detonated) continue;
 
-        if (m.armTimer > 0.0f) {
-            m.armTimer -= dt;
-        }
+        m.age += dt;
 
-        m.timer -= dt;
-
-        // Check tank proximity
+        // Mine::checkCollisions 0x80267484 runs one proximity query per frame:
+        // until +0xD2 is set it asks for tanks within 90 px, and only afterwards
+        // for tanks within 70 px. So a tank must first enter the arming ring,
+        // then close to the trigger ring on a later frame.
+        float queryRadius = m.proxArmed ? MINE_TRIGGER_RADIUS : MINE_ARM_RADIUS;
         bool tankNearby = false;
         for (const auto& tank : tanks) {
             if (!tank.IsAlive()) continue;
-            float dist = Vector2Distance(m.position, tank.GetPosition());
-            
-            // Immediate detonation on contact if armed
-            if (m.armTimer <= 0.0f && dist < TANK_RADIUS + MINE_RADIUS * 0.5f) {
-                DetonateMine(i, level, tanks, particles);
-                break;
+            if (Vector2Distance(m.position, tank.GetPosition()) >= queryRadius) continue;
+            tankNearby = true;
+            if (m.proxArmed) {
+                // +0xCD -> +0xC0 = 20 frames, +0xD3 = 1
+                if (!m.fuseLit) {
+                    m.fuseLit = true;
+                    m.fuse = MINE_TRIGGER_FUSE;
+                }
+            } else {
+                m.proxArmed = true;
             }
+            break;
+        }
 
-            if (dist < 3.0f) {
-                tankNearby = true;
+        // Chain detonation: another mine inside the summed 12 px radii.
+        for (size_t j = 0; j < m_mines.size() && !m.fuseLit; ++j) {
+            if (j == i || !m_mines[j].active || m_mines[j].detonated) continue;
+            if (Vector2Distance(m.position, m_mines[j].position) < MINE_RADIUS * 2.0f) {
+                m.fuseLit = true;
+                m.fuse = 0.0f;
             }
         }
 
-        if (!m.active || m.detonated) continue;
+        // Self-arming: +0xA0 reaches 480 frames, then a 120 frame fuse.
+        if (!m.fuseLit && m.age >= MINE_ARM_TIME) {
+            m.fuseLit = true;
+            m.fuse = MINE_FUSE_TIME;
+        }
 
         // Dynamic beep frequency
-        m.beepRate = tankNearby ? 6.0f : (1.0f + (1.0f - (m.timer / MINE_LIFETIME)) * 3.0f);
+        m.beepRate = tankNearby ? 6.0f : (1.0f + (m.age / MINE_LIFETIME) * 3.0f);
         m.beepTimer += dt * m.beepRate;
         if (m.beepTimer >= 1.0f) {
             m.beepTimer = 0.0f;
@@ -133,8 +161,11 @@ void MineManager::Update(float dt, Level& level, std::vector<Tank>& tanks, Parti
             m.flashTimer -= dt;
         }
 
-        if (m.timer <= 0.0f) {
-            DetonateMine(i, level, tanks, particles);
+        if (m.fuseLit) {
+            m.fuse -= dt;
+            if (m.fuse <= 0.0f) {
+                DetonateMine(i, level, tanks, particles);
+            }
         }
     }
 

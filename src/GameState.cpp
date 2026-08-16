@@ -218,7 +218,7 @@ void GameState::Update(float dt, NetworkManager* network) {
             if (!tank.IsAlive()) continue;
 
             if (tank.shootRequested) {
-                if (tank.Shoot(m_bulletManager, m_particleManager, m_level)) {
+                if (tank.Shoot(m_bulletManager, m_particleManager)) {
                     if (tank.GetConfig().isRocket) {
                         m_audioManager.Play(SoundType::ShootRocket);
                     } else {
@@ -254,7 +254,7 @@ void GameState::Update(float dt, NetworkManager* network) {
         m_aiManager.Update(dt, m_tanks, m_level, m_bulletManager, m_mineManager);
 
         // Update Bullets & Mines
-        m_bulletManager.Update(dt, m_level, m_tanks, m_particleManager, true);
+        m_bulletManager.Update(dt, m_level, m_tanks, m_mineManager, m_particleManager, true);
         m_mineManager.Update(dt, m_level, m_tanks, m_particleManager, true);
 
         // Update Particles

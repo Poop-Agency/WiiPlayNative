@@ -6,6 +6,7 @@
 class Level;
 class Tank;
 class ParticleManager;
+class MineManager;
 
 struct Bullet {
     uint32_t id;
@@ -31,7 +32,7 @@ public:
 
     void Reset();
     void SpawnBullet(uint32_t ownerId, Vector2 pos, Vector2 dir, float speed, int bounces, bool isRocket, Color color);
-    void Update(float dt, Level& level, std::vector<Tank>& tanks, ParticleManager& particles, bool isServer);
+    void Update(float dt, Level& level, std::vector<Tank>& tanks, MineManager& mines, ParticleManager& particles, bool isServer);
     
     std::vector<Bullet>& GetBullets() { return m_bullets; }
     const std::vector<Bullet>& GetBullets() const { return m_bullets; }
