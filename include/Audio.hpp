@@ -75,21 +75,24 @@ private:
     void LoadMP3Tracks();
 
     // Sound effects
-    Sound m_sndShoot;
-    Sound m_sndShootP2;
-    Sound m_sndShootEnemy[9];
-    Sound m_sndRocket;
-    Sound m_sndTankHit;
-    Sound m_sndTankExplode;
-    Sound m_sndRicochet;
-    Sound m_sndMinePlant;
-    Sound m_sndMineBeep;
-    Sound m_sndMineTrigger;
-    Sound m_sndExplosion;
-    Sound m_sndBlockBreak;
-    Sound m_sndMissionStart;
-    Sound m_sndVictory;
-    Sound m_sndGameOver;
+    // Default-initialised: LoadRippedSounds unloads whatever a slot already
+    // holds before replacing it, and IsSoundValid on an uninitialised Sound
+    // reads a garbage buffer pointer and takes UnloadSound down with it.
+    Sound m_sndShoot{};
+    Sound m_sndShootP2{};
+    Sound m_sndShootEnemy[9]{};
+    Sound m_sndRocket{};
+    Sound m_sndTankHit{};
+    Sound m_sndTankExplode{};
+    Sound m_sndRicochet{};
+    Sound m_sndMinePlant{};
+    Sound m_sndMineBeep{};
+    Sound m_sndMineTrigger{};
+    Sound m_sndExplosion{};
+    Sound m_sndBlockBreak{};
+    Sound m_sndMissionStart{};
+    Sound m_sndVictory{};
+    Sound m_sndGameOver{};
 
     bool m_hasShoot;
     bool m_hasRocket;
@@ -105,12 +108,12 @@ private:
     bool m_hasExplosion;
 
     // Engine & Tread sound
-    Sound m_sndEngineIdle;
-    Sound m_sndEngineDrive;
+    Sound m_sndEngineIdle{};
+    Sound m_sndEngineDrive{};
     bool m_enginePlaying;
 
     // Ripped tread clatter: 4 clips played round-robin, cadence follows speed
-    Sound m_sndTread[4];
+    Sound m_sndTread[4]{};
     bool m_hasTread;
     int m_treadIdx;
     float m_treadTimer;
