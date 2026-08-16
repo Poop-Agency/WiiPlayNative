@@ -9,6 +9,7 @@ enum class SoundType {
     ShootNormal,
     ShootRocket,
     TankHit,
+    TankExplode,
     Ricochet,
     MinePlant,
     MineBeep,
@@ -66,6 +67,7 @@ private:
     Sound m_sndShoot;
     Sound m_sndRocket;
     Sound m_sndTankHit;
+    Sound m_sndTankExplode;
     Sound m_sndRicochet;
     Sound m_sndMinePlant;
     Sound m_sndMineBeep;
@@ -77,6 +79,7 @@ private:
 
     bool m_hasShoot;
     bool m_hasTankHit;
+    bool m_hasTankExplode;
     bool m_hasRicochet;
     bool m_hasBlockBreak;
     bool m_hasMinePlant;

@@ -19,6 +19,7 @@ struct Bullet {
     bool isRocket;
     float lifetime;
     bool active;
+    bool leftOwner;   // false until the shell has cleared the tank that fired it
     Color color;
 
     // Trail effect

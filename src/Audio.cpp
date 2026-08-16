@@ -72,8 +72,10 @@ AudioManager::AudioManager()
     , m_treadIdx(0)
     , m_treadTimer(0.0f)
     , m_sndTankHit{}
+    , m_sndTankExplode{}
     , m_hasShoot(false)
     , m_hasTankHit(false)
+    , m_hasTankExplode(false)
     , m_hasRicochet(false)
     , m_hasBlockBreak(false)
     , m_hasMinePlant(false)
@@ -195,6 +197,13 @@ void AudioManager::LoadRippedSounds() {
         SetSoundVolume(m_sndShoot, 0.40f);
     } else m_hasShoot = false;
 
+    // A tank being destroyed is RP_TNK_SE_TNK_DISAPPEAR, not the mine blast.
+    m_sndTankExplode = LoadSound("assets/sfx/RP_TNK_SE_TNK_DISAPPEAR.wav");
+    if (IsSoundValid(m_sndTankExplode)) {
+        m_hasTankExplode = true;
+        SetSoundVolume(m_sndTankExplode, 0.40f);
+    } else m_hasTankExplode = false;
+
     m_sndTankHit = LoadSound("assets/sfx/RP_TNK_SE_HIT.wav");
     if (IsSoundValid(m_sndTankHit)) {
         m_hasTankHit = true;
@@ -305,6 +314,7 @@ void AudioManager::Close() {
     if (IsSoundValid(m_sndShoot)) UnloadSound(m_sndShoot);
     if (IsSoundValid(m_sndRocket)) UnloadSound(m_sndRocket);
     if (IsSoundValid(m_sndTankHit)) UnloadSound(m_sndTankHit);
+    if (IsSoundValid(m_sndTankExplode)) UnloadSound(m_sndTankExplode);
     if (IsSoundValid(m_sndRicochet)) UnloadSound(m_sndRicochet);
     if (IsSoundValid(m_sndMinePlant)) UnloadSound(m_sndMinePlant);
     if (IsSoundValid(m_sndMineBeep)) UnloadSound(m_sndMineBeep);
@@ -377,6 +387,7 @@ void AudioManager::Play(SoundType type) {
         case SoundType::ShootNormal:  if (IsSoundValid(m_sndShoot)) PlaySound(m_sndShoot); break;
         case SoundType::ShootRocket:  if (IsSoundValid(m_sndRocket)) PlaySound(m_sndRocket); break;
         case SoundType::TankHit:      if (IsSoundValid(m_sndTankHit)) PlaySound(m_sndTankHit); break;
+        case SoundType::TankExplode:  if (IsSoundValid(m_sndTankExplode)) PlaySound(m_sndTankExplode); break;
         case SoundType::Ricochet:     if (IsSoundValid(m_sndRicochet)) PlaySound(m_sndRicochet); break;
         case SoundType::MinePlant:    if (IsSoundValid(m_sndMinePlant)) PlaySound(m_sndMinePlant); break;
         case SoundType::MineBeep:     if (IsSoundValid(m_sndMineBeep)) PlaySound(m_sndMineBeep); break;

@@ -75,6 +75,7 @@ void MineManager::DetonateMine(size_t index, Level& level, std::vector<Tank>& ta
         float dist = Vector2Distance(minePos, tank.GetPosition());
         if (dist < MINE_BLAST_RADIUS) {
             tank.TakeDamage(particles);
+            audioEvents.push_back(SoundType::TankExplode);
         }
     }
 
@@ -123,6 +124,12 @@ void MineManager::Update(float dt, Level& level, std::vector<Tank>& tanks, Parti
         bool tankNearby = false;
         for (const auto& tank : tanks) {
             if (!tank.IsAlive()) continue;
+            // Mine::checkCollisions passes an owner id into both proximity
+            // queries (r5 = +0xBC, 0x802674f4), so the tank that planted the
+            // mine cannot trigger it. Without this the planter is inside the
+            // 90 px arming ring on the frame it plants and blows itself up a
+            // third of a second later. The blast itself still hurts everyone.
+            if (tank.GetId() == m.ownerId) continue;
             if (Vector2Distance(m.position, tank.GetPosition()) >= queryRadius) continue;
             tankNearby = true;
             if (m.proxArmed) {

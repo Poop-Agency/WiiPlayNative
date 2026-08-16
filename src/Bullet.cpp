@@ -42,6 +42,12 @@ void BulletManager::SpawnBullet(uint32_t ownerId, Vector2 pos, Vector2 dir, floa
     b.isRocket = isRocket;
     b.lifetime = 10.0f;
     b.active = true;
+    // The muzzle sits on the hull edge, inside the shell-versus-tank contact
+    // distance, so an unarmed shell would kill its own tank on the first frame.
+    // The original compares owner ids before registering a hit; here the shell
+    // simply ignores its owner until it has separated from it, which still lets
+    // your own ricochet come back and kill you.
+    b.leftOwner = false;
     b.color = color;
     b.trailTimer = 0.0f;
 
@@ -128,9 +134,17 @@ void BulletManager::Update(float dt, Level& level, std::vector<Tank>& tanks, Min
             if (!tank.IsAlive()) continue;
 
             float dist = Vector2Distance(b.position, tank.GetPosition());
-            if (dist < TANK_RADIUS + BULLET_RADIUS) {
+            bool inContact = dist < TANK_RADIUS + BULLET_RADIUS;
+
+            if (tank.GetId() == b.ownerId && !b.leftOwner) {
+                if (!inContact) b.leftOwner = true;
+                continue;
+            }
+
+            if (inContact) {
                 tank.TakeDamage(particles);
                 audioEvents.push_back(SoundType::TankHit);
+                audioEvents.push_back(SoundType::TankExplode);
                 b.active = false;
                 break;
             }
