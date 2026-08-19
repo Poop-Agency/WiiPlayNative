@@ -104,3 +104,107 @@ the spawn dispatch, so whatever the AI is, **it does not read the tilemap.**
   `0x8025a018` was reported as a 392-instruction function when it is a 26-
   instruction bounding-box helper. `fn` now warns, and prints the forward
   distance to the next `blr`, which is the reliable measure.
+
+# Found: real AI mechanics
+
+Everything below was decoded from the listing and is citable. This is the
+first material actually usable for a 1:1 AI.
+
+## The RNG
+
+`0x8025ca64` and `0x8026bcc4` inline the same generator. It is two generators
+combined, not the single LCG usually assumed:
+
+    LCG   : [r13-25800] = [r13-25800] * 0x41C64E6D + 12345
+    LFSR  : x = [r13-25796]; if (x & 1) x ^= 0x00011020; x >>= 1; [r13-25796] = x
+    out   : (LCG ^ LFSR) & 0xFFFF
+
+`0x41C64E6D` is built with `lis 0x41C6` + `addi 0x4E6D`, which is why searching
+`mulli` for LCG multipliers found nothing.
+
+## AI timers: min + rand % (max - min)
+
+Object A (see below) carries countdown timers in frames, each re-rolled from
+its own min/max pair when it reaches zero. Two are decoded:
+
+| timer | min | max | re-roll site |
+| --- | --- | --- | --- |
+| `[A+0x110]` | `[A+0x28]` | `[A+0x2C]` | `0x8026bd14` |
+| `[A+0x118]` | `[A+0x54]` | `[A+0x58]` | `0x8026bd98` |
+
+The decrement-and-fire shape at `0x8026bd18`:
+
+    lwz 3, 280(30)      ; [A+0x118]
+    addic. 0, 3, -1
+    stw 0, 280(30)
+    bt 1, .+120         ; still > 0 -> done
+
+This is not a fixed cooldown with jitter. It is a uniform draw over a
+per-tank frame range taken from the parameter record.
+
+## Only one enemy may act per frame, chosen from a random offset
+
+`0x8025ca64` draws a 16-bit random, reduces it modulo the tank count
+`[this+8]`, and starts scanning the tank array `[this+40]..[this+44]` at that
+index, wrapping around. For each live tank it reads `[A+0x118]`, and among
+those equal to 1 -- meaning "expires this frame" -- it lets only the first one
+through, bumping the rest to 2:
+
+    lwz 4, 280(5)       ; [A+0x118]
+    cmpwi 4, 1
+    bf 2, .+24          ; not about to fire -> next
+    addi 7, 7, 1        ; count
+    cmpwi 7, 1
+    bf 1, .+12          ; already let one through -> leave this one alone
+    addi 0, 4, 1
+    stw 0, 280(5)       ; push back by one frame
+
+So enemies are staggered, and which one wins is decided by a random scan
+origin rather than array order. Reproducing this needs the RNG call order to
+match, because the same seed feeds both this and the timer re-rolls.
+
+## Two parameter objects, not one
+
+`0x80268d2c` builds a holder with two sub-objects and the type index:
+
+    stw 4, 12(3)      ; [holder+0x0C] = type
+    lwz 3, 4(3)       ; A = [holder+4]
+    bl 0x8026bfd4     ; A fills itself from the record, by type
+    bl 0x8026be50
+    lwz 3, 8(30)      ; B = [holder+8]
+    bl 0x80269d84     ; GetTankParams(B, type)  -- the 16 fields already traced
+    bl 0x80269c7c
+
+B is the previously traced stats object. A is separate, fetches the 168-byte
+record itself (`mulli 168` over `[[r13-25008]+0x34]`, 21 iterations of an
+8-byte copy at `0x8026c058`) and stores the type at `[A+0x7C]`. A is read at
+only two sites, both in the tank TU: `0x8025cad4` and `0x8025cb90`.
+
+## Teal and Green are special-cased by type
+
+At `0x8026c440`, after extrapolating a point `pos + f31 * dir` on all three
+axes, the code dispatches on `[A+0x7C]`:
+
+    cmpwi 0, 3 -> r9 = 1      ; type 3 = Teal
+    cmpwi 0, 7 -> r9 = 2      ; type 7 = Green
+
+No other type gets a branch here. Record order is Player 0, Brown 1, Ash 2,
+Teal 3, Red 4, Yellow 5, Purple 6, Green 7, White 8, Black 9
+(`docs/tnkgameparam.md`), and `[A+0x7C]` is the same index used for the
+`mulli 168` lookup, so the mapping is sound.
+
+## Threshold test on a dot product
+
+`0x8026cdb0` scales an input by 0.711111 (`0x8026cdfc`) and later computes a
+two-component dot product with `ps_mul` / `ps_madd` / `ps_sum0` at
+`0x8026ceec..0x8026cf00`, comparing the result against f31 at `0x8026cf04`.
+`0x8026d0fc` uses the same 0.711111 constant alongside the literal 22, which
+is the map width. Not yet interpreted, but it is a genuine geometric test.
+
+## Consequence for our implementation
+
+Every quantity above is in frames and driven by a shared RNG whose call order
+matters. Our simulation runs on a variable `float dt` with `rand()`, so it
+cannot reproduce this timing even in principle. A fixed 60 Hz tick with the
+RNG state held explicitly is a prerequisite for the 1:1 AI, independent of any
+netcode consideration.
