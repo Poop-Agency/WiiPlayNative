@@ -275,8 +275,23 @@ if __name__ == "__main__":
         for n, o, v, s in secs:
             print("%-7s %-10s %-10s %s" % (n, hex(o), hex(v), hex(s)))
     elif sys.argv[1] == "fn":
-        a, b = bounds(int(sys.argv[2], 0))
+        q = int(sys.argv[2], 0)
+        a, b = bounds(q)
         print("start %08x  end %08x  (%d instructions)" % (a, b, (b - a) // 4 + 1))
+        # The walk-back only recognises `stwu r1, -N(r1)` as a prologue, but
+        # Metrowerks schedules loads ahead of it, so a function can begin with
+        # an lfs/lwz and the walk sails past into the previous function. Say so
+        # instead of reporting a confident wrong start.
+        if a != q and (_w32(q) >> 16) != 0x9421:
+            print("  warning: start is a guess -- %08x is not itself a prologue," % q)
+            print("  and a function may begin with a scheduled load before `stwu`.")
+        n = 0
+        while n < 2000:
+            w = _w32(q + n * 4)
+            n += 1
+            if w == 0x4E800020 or ((w >> 26) == 18 and not (w & 1)):
+                break
+        print("  forward from %08x: %d instructions to the next blr/tail-branch" % (q, n))
     elif sys.argv[1] == "dis":
         dis(int(sys.argv[2], 0), int(sys.argv[3]) if len(sys.argv) > 3 else 40)
     elif sys.argv[1] == "find":
