@@ -219,3 +219,26 @@ matters. Our simulation runs on a variable `float dt` with `rand()`, so it
 cannot reproduce this timing even in principle. A fixed 60 Hz tick with the
 RNG state held explicitly is a prerequisite for the 1:1 AI, independent of any
 netcode consideration.
+
+## The AI frame order
+
+`0x802569c0` runs the three passes back to back on the same tank manager
+`[r30+0x50]`, which fixes both the ordering and the RNG consumption order:
+
+    lwz 3, 80(30) ; bl 0x8025cb20    ; stagger [A+0x110], quota 2, 1 RNG draw
+    lwz 3, 80(30) ; bl 0x8025ca64    ; stagger [A+0x118], quota 1, 1 RNG draw
+    lwz 3, 80(30) ; bl 0x8025d710    ; per-tank update
+
+`0x8025d710` is a plain walk over the tank list calling the virtual at
+vtable+0x18 on each live tank (`0x8025d744..0x8025d750`); it draws no random
+numbers and arbitrates nothing.
+
+The two mechanisms fit together cleanly. A stagger pass tests for `== 1`,
+meaning "expires on this frame's decrement", and pushes surplus tanks to 2.
+The per-tank update then decrements: a tank left at 1 reaches 0 and fires,
+while a tank bumped to 2 reaches 1 and becomes a candidate again next frame.
+So no action is lost, only deferred, and the deferral order is randomised by
+the scan origin.
+
+Reproducing this requires the same order: both stagger passes, in that
+order, before any tank updates, with exactly one RNG draw each.
