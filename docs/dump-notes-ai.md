@@ -159,6 +159,17 @@ through, bumping the rest to 2:
     addi 0, 4, 1
     stw 0, 280(5)       ; push back by one frame
 
+`0x8025cb20` is the twin of this function for the other timer, and it carries
+a different quota. It scans identically from a random origin but tests
+`[A+0x110]` at `0x8025cb98` and compares the running count against **2** at
+`0x8025cba8`, where the `[A+0x118]` pass compares against **1** at
+`0x8025caec`. So the two timers are throttled differently:
+
+| timer | tested at | max tanks firing per frame |
+| --- | --- | --- |
+| `[A+0x118]` | `0x8025cadc` | 1 |
+| `[A+0x110]` | `0x8025cb98` | 2 |
+
 So enemies are staggered, and which one wins is decided by a random scan
 origin rather than array order. Reproducing this needs the RNG call order to
 match, because the same seed feeds both this and the timer re-rolls.
