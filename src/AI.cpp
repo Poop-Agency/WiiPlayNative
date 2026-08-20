@@ -160,9 +160,19 @@ void AIManager::UpdateEnemy(Tank& enemy, AIState& state, float dt,
     Vector2 playerPos = targetPlayer->GetPosition();
     Vector2 myPos = enemy.GetPosition();
 
-    // Lead target with velocity
+    // Only some tanks lead the target, and the binary agrees with the list that
+    // was already here. The action selector extrapolates pos + f31 * dir for
+    // everyone at 0x8026c474, then picks an aim mode by type right after: type 3
+    // Teal and type 9 Black take mode 1 (0x8026c464, 0x8026c49c), type 7 Green
+    // takes mode 2 (0x8026c48c), and every other type falls through on mode 0.
+    //
+    // Reading mode 1 as "lead the shot" is OURS. The branch structure is forced
+    // by the code; what each mode means downstream is not. Green's mode 2 is the
+    // odd one out and is not handled here at all yet.
     Vector2 predictedPlayerPos = playerPos;
     if (enemy.GetConfig().isRocket || enemy.GetType() == TankType::EnemyBlack || enemy.GetType() == TankType::EnemyTeal) {
+        // The 1.5 lead distance is still ours: f31 comes in as an argument at
+        // 0x8026c294 and its caller has not been read yet.
         predictedPlayerPos = {
             playerPos.x + targetPlayer->moveInput.x * 1.5f,
             playerPos.y + targetPlayer->moveInput.y * 1.5f
