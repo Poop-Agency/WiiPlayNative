@@ -278,14 +278,34 @@ L'action part donc quand `r3 - 1 <= 0`, c'est-à-dire **quand le compteur valait
 un char laissé à 1 agit à la frame suivante, un char poussé à 2 devient candidat
 la frame d'après.
 
-## Les gardes sont des verrous, pas des autorisations
+## Les gardes sont des recharges, pas des drapeaux
 
     8026bca4  cmpwi r0, 0            ; r0 = [A+0x70]
     8026bca8  bf    CR0[EQ], .+16    ; si != 0, saute l'appel
 
-L'appel n'a lieu **que si le champ vaut 0**. `[A+0x70]` et `[A+0x74]` sont donc
-des drapeaux d'inhibition (occupé / interdit), pas des drapeaux d'activation.
-Se tromper de polarité ici ferait tirer les chars exactement quand ils ne doivent pas.
+L'appel n'a lieu **que si le champ vaut 0**. Se tromper de polarité ici ferait
+tirer les chars exactement quand ils ne doivent pas.
+
+Et ce ne sont pas des booléens. Le sélecteur d'action les entretient comme des
+compteurs de frames, décrémentés puis bornés à zéro :
+
+    8026c508  lwz   r3, 8(r30)      ; [A+0x8] = champ 36, le cooldown de tir
+    8026c510  stw   r3, 112(r30)    ; [A+0x70] <- champ 36
+    8026c514  stw   r0, 120(r30)    ; [A+0x78] <- champ 41
+    8026c518  lwz   r3, 112(r30)
+    8026c51c  addic. r0, r3, -1
+    8026c520  stw   r0, 112(r30)
+    8026c524  bf    CR0[LT], .+12   ; negatif -> on borne a 0
+    8026c530  lwz   r3, 116(r30)    ; meme traitement pour [A+0x74]
+    8026c538  stw   r0, 116(r30)
+
+Donc `[A+0x70]` est la **recharge de l'arme**, rechargée depuis le champ 36, et la
+garde du timer de tir signifie simplement « le canon est encore en train de se
+recharger ». Deux cadences distinctes se superposent : le timer `[A+0x110]` décide
+*quand envisager* de tirer, `[A+0x70]` décide *si l'arme est prête*.
+
+Le site de rechargement de `[A+0x74]` n'est pas encore localisé — il est décrémenté
+ici mais rechargé ailleurs, probablement par le callee de pose de mine.
 
 ## Deux drapeaux remis à zéro à chaque frame
 
