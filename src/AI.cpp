@@ -327,15 +327,32 @@ void AIManager::UpdateEnemy(Tank& enemy, AIState& state, float dt,
     // fields are non-zero for exactly the tanks that carry mines, which is what
     // pins 0x8026c5ac as the mine callee.
     //
-    // Still ours: the 5.0 proximity gate. The original instead aborts when the
-    // nearest object is within A[0x50] (0x8026c608) and then rolls a percentage
-    // against A[0x5C] or A[0x60] depending on overlap (0x8026c6a4). Those three
-    // fields are not identified yet, so this stays an approximation.
+    // The range gate is no longer ours either. At 0x8026c5fc the original loads
+    // A[0x50] and compares it against a distance, and the polarity is easy to get
+    // backwards: `cror 2,0,2` folds LT into EQ, so the `bt` at 0x8026c608 leaves
+    // when A[0x50] <= dist. The mine is laid only while something is CLOSER than
+    // A[0x50]. It is a proximity requirement, not a spacing guard.
+    //
+    // A[0x50] is field 5, a flat 100 for every tank. Stored distances are pixels,
+    // as the speeds are, so 100 px is 100 * CELL_SIZE / 32 world units.
+    //
+    // Expiry does not lay a mine by itself: a percentage is rolled against
+    // A[0x5C] or A[0x60] (0x8026c6ac and 0x8026c6c8), the RNG scaled to [0,100)
+    // at 0x8026c68c. Yellow rolls 50, the other three 3 or 5, which is why Yellow
+    // fills a map with mines and Black leaves one now and then.
+    //
+    // Still ours: which of the two chances applies. The original picks on the
+    // boolean returned by 0x80261c14 (tested at 0x8026c680); until that function
+    // is read, take the lower, commoner one.
     const TankConfig& mineCfg = enemy.GetConfig();
     if (mineCfg.maxMines > 0 && mineCfg.mineDecisionMax > 0) {
         state.mineTimer -= dt;
-        if (state.mineTimer <= 0.0f && closestDist < 5.0f) {
-            enemy.mineRequested = true;
+        if (state.mineTimer <= 0.0f) {
+            float rangeWorld = mineCfg.mineRangePx * CELL_SIZE / 32.0f;
+            if (closestDist < rangeWorld &&
+                (rand() % 100) <= (int)mineCfg.mineChanceFar) {
+                enemy.mineRequested = true;
+            }
             int span = mineCfg.mineDecisionMax - mineCfg.mineDecisionMin;
             state.mineTimer = (mineCfg.mineDecisionMin + (span > 0 ? rand() % span : 0)) / 60.0f;
         }

@@ -14,9 +14,9 @@ Speeds are pixels per frame at 60 Hz; one block is 32 px and one cell.
 | 2 | i | 2 | 0 | 0 | 0 | 0 | 4 | 2 | 0 | 2 | 2 | max mines |
 | 3 | i | 60 | 0 | 0 | 0 | 0 | 60 | 60 | 0 | 60 | 60 | mine timer max, frames -> A+0x58 |
 | 4 | i | 40 | 0 | 0 | 0 | 0 | 40 | 40 | 0 | 40 | 40 | mine timer min, frames -> A+0x54 |
-| 5 | f | 100 | 100 | 100 | 100 | 100 | 100 | 100 | 100 | 100 | 100 | unknown, constant |
-| 6 | f | 100 | 0 | 0 | 0 | 0 | 50 | 5 | 0 | 5 | 5 | unknown |
-| 7 | f | 10 | 0 | 0 | 0 | 0 | 50 | 3 | 0 | 3 | 3 | unknown |
+| 5 | f | 100 | 100 | 100 | 100 | 100 | 100 | 100 | 100 | 100 | 100 | mine range, px -> A+0x50 |
+| 6 | f | 100 | 0 | 0 | 0 | 0 | 50 | 5 | 0 | 5 | 5 | mine chance near, % -> A+0x60 |
+| 7 | f | 10 | 0 | 0 | 0 | 0 | 50 | 3 | 0 | 3 | 3 | mine chance far, % -> A+0x5C |
 | 8 | i | 6 | 6 | 6 | 6 | 6 | 6 | 6 | 6 | 6 | 6 | unknown, constant |
 | 9 | i | 1 | 3 | 3 | 3 | 3 | 1 | 1 | 3 | 1 | 1 | unknown |
 | 10 | f | 0.3 | 0 | 0.3 | 0.3 | 0.3 | 0.3 | 0.3 | 0 | 0.3 | 0.3 | unknown |
@@ -72,6 +72,9 @@ ci-dessous a été vérifiée à la main : le `lfs`/`lwz` depuis la pile, le
 | 35    | `0x28`   | borne min du timer de tir `[A+0x110]`       | `8026c0f8` lwz / `8026c1dc` stw   |
 | 34    | `0x2C`   | borne max du timer de tir                   | `8026c0f4` lwz / `8026c1e0` stw   |
 | 4     | `0x54`   | borne min du timer de mine `[A+0x118]`      | `8026c07c` lwz / `8026c208` stw   |
+| 5     | `0x50`   | portée de pose de mine, px                  | `8026c080` lfs / `8026c204` stfs  |
+| 7     | `0x5C`   | probabilité de pose, loin, %                | `8026c088` lfs / `8026c210` stfs  |
+| 6     | `0x60`   | probabilité de pose, près, %                | `8026c084` lfs / `8026c214` stfs  |
 | 3     | `0x58`   | borne max du timer de mine                  | `8026c078` lwz / `8026c20c` stw   |
 
 ### Pourquoi ces rôles tiennent
@@ -94,3 +97,20 @@ C'est ce recoupement, et non le désassemblage seul, qui fait passer
 
 Unités : ces six champs sont des compteurs de frames à 60 Hz, sauf le 28 dont
 l'échelle angulaire n'est pas encore établie.
+
+### La pose de mine en entier
+
+Le timer `[A+0x118]` qui expire ne pose pas de mine : il ouvre une tentative.
+
+1. **Portée.** `0x8026c5fc` charge `A[0x50]` et le compare à une distance. Attention
+   à la polarité : `cror 2,0,2` replie LT dans EQ, donc le `bt` de `0x8026c608`
+   sort quand `A[0x50] <= dist`. On ne pose que si quelque chose est **plus près**
+   que `A[0x50]`. C'est une exigence de proximité, pas une garde d'espacement.
+2. **Tirage.** Le RNG est ramené dans `[0, 100)` en `0x8026c68c`, puis comparé à
+   `A[0x60]` (`0x8026c6ac`) ou à `A[0x5C]` (`0x8026c6c8`).
+3. **Lequel des deux.** Le booléen rendu par `0x80261c14`, testé en `0x8026c680`.
+   Non nul -> `A[0x60]`, nul -> `A[0x5C]`. Ce que teste cette fonction n'est pas
+   encore établi.
+
+Yellow tire 50 des deux côtés, les trois autres 3 ou 5 : c'est ce qui fait que
+Yellow tapisse la carte et que Black lâche une mine de loin en loin.
