@@ -323,3 +323,77 @@ Contrairement aux trois callees ci-dessus, `0x8026c280` tourne à **chaque** fra
 venant d'une seule source non recoupée. Les 33 claims gameplay de `0x8026c730`
 ont toutes été rejetées comme non forcées par le code. Ne rien écrire dans `src/`
 sur la foi de ces noms.
+
+# Ce que font vraiment les trois callees de timer
+
+Les noms restés en suspens sont maintenant tranchés en suivant les `bl` dans les
+callees indirects — ce qu'une fonction fait se décide chez ses appelés, pas dans
+sa propre arithmétique. Rapports bruts : `re/callee_*.md`.
+
+## `0x8026c730` — tir. PROUVÉ.
+
+    8026c768  add  r4, r5, r4      ; indexe le tableau global par l'id du char
+    8026c76c  lwz  r4, ...         ; nombre de balles actives de ce char
+    8026c778  bl   0x8026d2d4      ; si sous la limite -> spawn
+    8026c7bc  stb  r0, 264(r31)    ; sinon [A+0x108] <- 1
+
+Le spawner `0x8026d2d4` calcule la position de sortie en `Pos + f1 * Forward`
+(`fmadds` en `0x8026d304` et `0x8026d310`), f1 étant la longueur de canon passée
+en argument — donc la balle naît à la bouche du canon, pas au centre du char.
+
+Il y a bien une **limite de balles simultanées par char**, lue dans un tableau
+global indexé par l'id. Quand la limite est atteinte le tir n'est pas perdu :
+`[A+0x108]` passe à 1, ce qui reporte l'intention sur une frame suivante.
+
+## `0x8026c5ac` — pose de mine. PROBABLE, pas prouvé.
+
+Faisceau d'indices concordants :
+
+- l'entité créée reçoit le **type 2** (`li r7, 2` en `0x802692ac`, écrit en
+  `0x802693ac`), là où la balle passe par un chemin différent ;
+- elle naît en `A[0x64..0x6C]`, le **centre du char**, pas à la bouche du canon ;
+- garde d'espacement en `0x8026c608` : si l'objet le plus proche est à une
+  distance `<= A[0x50]`, la fonction abandonne — empêche d'empiler les poses ;
+- deux probabilités distinctes selon la proximité d'une autre entité
+  (`0x8026c6a4`) : tirage RNG dans `[0, 100)` comparé à `A[0x60]` si recouvrement,
+  à `A[0x5C]` sinon.
+
+Ce qui manque pour prouver : la valeur d'énumération derrière le type 2, et
+l'identité des tableaux globaux `0x80456C68` et `0x80456C78`. Tant que ce n'est
+pas établi, ne pas câbler « mine » en dur dans `src/`.
+
+## `0x8026c7d4` — NON TRANCHÉ.
+
+Il faut d'abord `0x800e82e0`, `0x800e829c`, `0x8002ff8c`, `0x800e7fe8`
+(désassemblés dans `re/asm/`, l'analyse reste à faire).
+
+# Correction : `0x80269288` n'est pas deux fonctions
+
+Une lecture antérieure en faisait un « sélecteur de direction par raycast 4 voies »,
+une autre « le spawner de projectile ». Les deux sont des vues partielles de la
+**même** fonction de 418 instructions.
+
+`tools/dol.py fn` annonce « 95 instructions jusqu'au prochain blr/tail-branch »,
+mais ce prétendu bord est un `b .+988` en `0x80269400` qui saute vers
+`0x802697dc` — **à l'intérieur** de la fonction. Le seul `blr` du bloc est en
+`0x8026990c`. La mesure « en avant jusqu'au blr » compte donc un saut interne
+comme une fin de fonction et tronque.
+
+Conséquence pratique : sur toute fonction contenant un `b` en avant non
+conditionnel, croiser la borne avec un scan des `blr` avant de découper un
+listing. Un listing tronqué produit des lectures qui semblent cohérentes et sont
+fausses.
+
+# Constantes flottantes du pool sda2
+
+Résolues depuis r2 = 0x8045EF00, valeurs brutes, sans interprétation :
+
+| accès       | VMA          | valeur    |
+|-------------|--------------|-----------|
+| `r2-17912`  | `0x8045a908` | 0.7111111 |
+| `r2-17908`  | `0x8045a90c` | 22.0      |
+| `r2-17904`  | `0x8045a910` | 176.0     |
+| `r2-18008`  | `0x8045a8a8` | 0.0       |
+
+22.0 est la largeur de grille. 176 = 22 x 8. 0.7111111 vaut exactement 32/45 ;
+son rôle n'est pas établi et ne doit pas être deviné.
