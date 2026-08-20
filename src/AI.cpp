@@ -192,6 +192,43 @@ void AIManager::UpdateEnemy(Tank& enemy, AIState& state, float dt,
         enemy.aimTarget = predictedPlayerPos;
     }
 
+    // Aim error, from 0x8026c7d4. That callee fires on its own countdown
+    // [A+0x10C], reloaded from field 39 (0x8026bb9c lwz / 0x8026bba0 stw) with a
+    // fixed value and no gate, so each tank re-aims on a constant beat: Brown
+    // every 60 frames, Teal every 8.
+    //
+    // The error itself: f31 = [A+0x1C] (0x8026c804), f30 = -f31 (0x8026c80c), then
+    // a uniform draw between the two (0x8026caa8..0x8026cac0, the RNG normalised by
+    // 2^-23) scaled by 0.711111 (0x8026cacc, sda2 0x8045a908) and handed to the
+    // rotation builder at 0x8002ff8c as a yaw. A full circle is 65536 of those
+    // units: 0x8002faa8 subtracts 65536 until the angle is in range.
+    //
+    // So the spread is +/- field 28, and the record makes the tanks behave as they
+    // do on screen: Brown 170 the wildest, Teal 0 dead straight, Black 5 deadly.
+    //
+    // Open: at 65536 units per turn this puts Brown at only +/- 0.66 degrees, which
+    // feels tighter than Brown plays. The mechanism is proven, the unit chain into
+    // the table lookup at 0x8002fad0 is not fully unpicked. Worth measuring against
+    // the real game before trusting the magnitude.
+    if (state.aimTimer <= 0.0f) {
+        const TankConfig& aimCfg = enemy.GetConfig();
+        state.aimTimer = aimCfg.reaimFrames / 60.0f;
+        if (aimCfg.aimSpread > 0.0f) {
+            float draw = ((rand() / (float)RAND_MAX) * 2.0f - 1.0f) * aimCfg.aimSpread;
+            state.aimError = draw * 0.711111f * (2.0f * PI / 65536.0f);
+        } else {
+            state.aimError = 0.0f;
+        }
+    }
+    state.aimTimer -= dt;
+
+    if (state.aimError != 0.0f) {
+        Vector2 me = enemy.GetPosition();
+        Vector2 d = { enemy.aimTarget.x - me.x, enemy.aimTarget.y - me.y };
+        float c = std::cos(state.aimError), sn = std::sin(state.aimError);
+        enemy.aimTarget = { me.x + d.x * c - d.y * sn, me.y + d.x * sn + d.y * c };
+    }
+
     if (canShoot && state.shootTimer <= 0.0f) {
         enemy.shootRequested = true;
 
@@ -209,7 +246,14 @@ void AIManager::UpdateEnemy(Tank& enemy, AIState& state, float dt,
                 state.shootTimer = cooldown;
             }
         } else {
-            state.shootTimer = cooldown * (0.9f + (rand() % 100) / 500.0f);
+            // The original does not jitter a cooldown. Its fire timer [A+0x110]
+            // is re-rolled as min + rand % (max - min) in frames, from record
+            // fields 35 and 34 (reload at 0x8026bd14, bounds read at 0x8026bd50).
+            // Brown waits 30-45 frames between decisions, Black 5-10.
+            const TankConfig& cfg = enemy.GetConfig();
+            int span = cfg.fireDecisionMax - cfg.fireDecisionMin;
+            int frames = cfg.fireDecisionMin + (span > 0 ? rand() % span : 0);
+            state.shootTimer = frames / 60.0f;
         }
     }
 
@@ -273,16 +317,27 @@ void AIManager::UpdateEnemy(Tank& enemy, AIState& state, float dt,
         }
     }
 
-    // TnkGameParam field 2 is the mine allowance and it is non-zero for four
-    // enemies: Yellow 4, Purple 2, White 2, Black 2 (docs/tnkgameparam.md).
     // Mine laying was hardcoded to the Yellow case, so three of the four tanks
-    // that carry mines never laid one. Drive it off the stat instead. The 5.0
-    // range and the 3.5 s spacing are still ours, not the original's.
-    if (enemy.GetConfig().maxMines > 0) {
+    // that carry mines never laid one. Drive it off the stat instead: field 2 is
+    // the allowance, non-zero for Yellow 4, Purple 2, White 2, Black 2.
+    //
+    // The spacing is no longer ours. The original re-rolls timer [A+0x118] as
+    // min + rand % (max - min) frames from fields 4 and 3 (reload at 0x8026bd98,
+    // bounds read at 0x8026bd50), i.e. a decision every 40-60 frames. Those two
+    // fields are non-zero for exactly the tanks that carry mines, which is what
+    // pins 0x8026c5ac as the mine callee.
+    //
+    // Still ours: the 5.0 proximity gate. The original instead aborts when the
+    // nearest object is within A[0x50] (0x8026c608) and then rolls a percentage
+    // against A[0x5C] or A[0x60] depending on overlap (0x8026c6a4). Those three
+    // fields are not identified yet, so this stays an approximation.
+    const TankConfig& mineCfg = enemy.GetConfig();
+    if (mineCfg.maxMines > 0 && mineCfg.mineDecisionMax > 0) {
         state.mineTimer -= dt;
         if (state.mineTimer <= 0.0f && closestDist < 5.0f) {
             enemy.mineRequested = true;
-            state.mineTimer = 3.5f;
+            int span = mineCfg.mineDecisionMax - mineCfg.mineDecisionMin;
+            state.mineTimer = (mineCfg.mineDecisionMin + (span > 0 ? rand() % span : 0)) / 60.0f;
         }
     }
 

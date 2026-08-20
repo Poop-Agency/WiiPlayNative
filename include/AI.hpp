@@ -16,6 +16,8 @@ struct AIState {
     float burstTimer;
     int burstCount;
     float dodgeTimer;
+    float aimTimer;   // counts down the re-aim beat, field 39 -> A+0x24
+    float aimError;   // radians, held between re-aims, drawn from field 28
 };
 
 class AIManager {
