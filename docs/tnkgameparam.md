@@ -114,3 +114,52 @@ Le timer `[A+0x118]` qui expire ne pose pas de mine : il ouvre une tentative.
 
 Yellow tire 50 des deux côtés, les trois autres 3 ou 5 : c'est ce qui fait que
 Yellow tapisse la carte et que Black lâche une mine de loin en loin.
+
+
+## La table complète, dérivée mécaniquement
+
+`tools/fieldmap.py` la reconstruit depuis le désassemblage de `0x8026bfd4` au lieu
+de la lire d'un rapport. Le principe : le constructeur recopie le record de 168
+octets sur sa propre pile, puis déplace les champs de là vers l'objet. Chaque
+`stfs`/`stw rN, D(r3)` est donc une ligne, dès qu'on sait de quel emplacement de
+pile `rN` a été chargé pour la dernière fois. Registres entiers et flottants sont
+suivis séparément, et le type se déduit de `lwz` contre `lfs`.
+
+Régénérer :
+
+    python3 tools/fieldmap.py
+
+| fld | -> A   | type  | load     | store | sens |
+|-----|--------|-------|----------|---------- |------|
+|   1 | 0x4C   | float | 8026c070 | 8026c200 | ? |
+|   2 | 0x44   | int   | 8026c074 | 8026c1f8 | mines (fld 2, connu) |
+|   3 | 0x58   | int   | 8026c078 | 8026c20c | timer mine max |
+|   4 | 0x54   | int   | 8026c07c | 8026c208 | timer mine min |
+|   5 | 0x50   | float | 8026c080 | 8026c204 | portee mine, px |
+|   6 | 0x60   | float | 8026c084 | 8026c214 | proba mine pres, % |
+|   7 | 0x5C   | float | 8026c088 | 8026c210 | proba mine loin, % |
+|   8 | 0x40   | int   | 8026c08c | 8026c1f4 | ? |
+|   9 | 0x48   | int   | 8026c090 | 8026c1fc | ? |
+|  28 | 0x1C   | float | 8026c0dc | 8026c1d0 | dispersion de visee |
+|  29 | 0xC    | int   | 8026c0e0 | 8026c1c0 | balles simultanees (fld 29, connu) |
+|  30 | 0x30   | float | 8026c0e4 | 8026c1e4 | ? |
+|  31 | 0x38   | float | 8026c0e8 | 8026c1ec | ? |
+|  32 | 0x34   | float | 8026c0ec | 8026c1e8 | ? |
+|  33 | 0x10   | int   | 8026c0f0 | 8026c1c4 | ricochets (fld 33, connu) |
+|  34 | 0x2C   | int   | 8026c0f4 | 8026c1e0 | timer tir max |
+|  35 | 0x28   | int   | 8026c0f8 | 8026c1dc | timer tir min |
+|  36 | 0x8    | int   | 8026c0fc | 8026c1bc | cooldown de tir, frames (fld 36, connu) |
+|  37 | 0x14   | float | 8026c100 | 8026c1c8 | vitesse d obus (fld 37, connu) |
+|  38 | 0x20   | float | 8026c104 | 8026c1d4 | ? |
+|  39 | 0x24   | int   | 8026c108 | 8026c1d8 | periode de re-visee |
+|  40 | 0x3C   | float | 8026c10c | 8026c1f0 | ? |
+|  41 | 0x18   | int   | 8026c110 | 8026c1cc | ? |
+
+Les 42 champs sont tous chargés depuis la pile, mais seuls 23 sont écrits dans
+l'objet AI. Les autres sont consommés ailleurs — ils partent vers le char plutôt
+que vers son contrôleur. Le champ 22, la vitesse, en fait partie : elle n'entre
+jamais dans l'objet AI.
+
+Cette table reproduit sans y toucher les neuf lignes qui avaient été vérifiées à
+la main une par une (champs 3, 4, 5, 6, 7, 28, 34, 35, 39). C'est une confirmation
+indépendante : elle sort du binaire, pas d'un rapport.
