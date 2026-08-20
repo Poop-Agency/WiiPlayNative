@@ -379,10 +379,13 @@ mais ce prétendu bord est un `b .+988` en `0x80269400` qui saute vers
 `0x8026990c`. La mesure « en avant jusqu'au blr » compte donc un saut interne
 comme une fin de fonction et tronque.
 
-Conséquence pratique : sur toute fonction contenant un `b` en avant non
-conditionnel, croiser la borne avec un scan des `blr` avant de découper un
-listing. Un listing tronqué produit des lectures qui semblent cohérentes et sont
-fausses.
+Le listing, lui, était complet : il est découpé sur la borne `end`, pas sur cette
+mesure. Aucune analyse n'a donc tourné sur du code tronqué. Le dégât est ailleurs :
+ce « 95 » a servi d'argument pour conclure que deux lectures divergentes visaient
+deux fonctions distinctes. Elles décrivaient les deux moitiés d'une seule.
+
+Corrigé dans `tools/dol.py` (commit 17a7902) : un terminateur ne compte que si
+aucun branchement antérieur ne porte au-delà. Cas épinglé dans `selftest`.
 
 # Constantes flottantes du pool sda2
 
