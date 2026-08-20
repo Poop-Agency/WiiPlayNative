@@ -146,13 +146,23 @@ void Renderer3D::DrawArena(const Level& level) {
     float arenaW = level.GetWidth() * CELL_SIZE;
     float arenaH = level.GetHeight() * CELL_SIZE;
 
-    // 1. Table Top Surface (Oak wood grain tone matching Image 0)
-    DrawCube({ 0.0f, -0.2f, 0.0f }, arenaW, 0.4f, arenaH, { 236, 212, 162, 255 });
+    // 1. Table top. floor_face is the game's own playfield surface; floor_lower
+    // is the darker underside it sits on.
+    const bool haveFloor = Tex("tnk_field_16_9/floor_face") != nullptr;
+    DrawTexCube({ 0.0f, -0.2f, 0.0f }, { arenaW, 0.4f, arenaH },
+                "tnk_field_16_9/floor_face",
+                haveFloor ? WHITE : Color{ 236, 212, 162, 255 });
+    DrawTexCube({ 0.0f, -0.45f, 0.0f }, { arenaW * 1.04f, 0.2f, arenaH * 1.04f },
+                "tnk_field_16_9/floor_lower",
+                Tex("tnk_field_16_9/floor_lower") ? WHITE : Color{ 190, 165, 120, 255 });
 
-    // 2. Wood Plank Lines
-    for (int y = 0; y < level.GetHeight(); ++y) {
-        float z = (y - level.GetHeight() * 0.5f + 0.5f) * CELL_SIZE;
-        DrawCube({ 0.0f, 0.005f, z }, arenaW * 0.99f, 0.01f, 0.05f, { 218, 192, 142, 255 });
+    // 2. Wood plank lines, only worth drawing when the floor is a flat colour --
+    // the ripped surface already has its own grain.
+    if (!haveFloor) {
+        for (int y = 0; y < level.GetHeight(); ++y) {
+            float z = (y - level.GetHeight() * 0.5f + 0.5f) * CELL_SIZE;
+            DrawCube({ 0.0f, 0.005f, z }, arenaW * 0.99f, 0.01f, 0.05f, { 218, 192, 142, 255 });
+        }
     }
 
     // 3. Wooden Border Rails (Toy building blocks framing the arena)
@@ -162,19 +172,23 @@ void Renderer3D::DrawArena(const Level& level) {
     Color blockEdge = { 180, 145, 95, 255 };
 
     // North wall
-    DrawCube({ 0.0f, wallHeight * 0.5f, -arenaH * 0.5f - wallThick * 0.5f }, arenaW + wallThick * 2, wallHeight, wallThick, blockWood);
+    DrawTexCube({ 0.0f, wallHeight * 0.5f, -arenaH * 0.5f - wallThick * 0.5f }, { arenaW + wallThick * 2, wallHeight, wallThick }, "tnk_block/block.2",
+                Tex("tnk_block/block.2") ? WHITE : blockWood);
     DrawCubeWires({ 0.0f, wallHeight * 0.5f, -arenaH * 0.5f - wallThick * 0.5f }, arenaW + wallThick * 2, wallHeight, wallThick, blockEdge);
 
     // South wall
-    DrawCube({ 0.0f, wallHeight * 0.5f, arenaH * 0.5f + wallThick * 0.5f }, arenaW + wallThick * 2, wallHeight, wallThick, blockWood);
+    DrawTexCube({ 0.0f, wallHeight * 0.5f, arenaH * 0.5f + wallThick * 0.5f }, { arenaW + wallThick * 2, wallHeight, wallThick }, "tnk_block/block.2",
+                Tex("tnk_block/block.2") ? WHITE : blockWood);
     DrawCubeWires({ 0.0f, wallHeight * 0.5f, arenaH * 0.5f + wallThick * 0.5f }, arenaW + wallThick * 2, wallHeight, wallThick, blockEdge);
 
     // West wall
-    DrawCube({ -arenaW * 0.5f - wallThick * 0.5f, wallHeight * 0.5f, 0.0f }, wallThick, wallHeight, arenaH, blockWood);
+    DrawTexCube({ -arenaW * 0.5f - wallThick * 0.5f, wallHeight * 0.5f, 0.0f }, { wallThick, wallHeight, arenaH }, "tnk_block/block.2",
+                Tex("tnk_block/block.2") ? WHITE : blockWood);
     DrawCubeWires({ -arenaW * 0.5f - wallThick * 0.5f, wallHeight * 0.5f, 0.0f }, wallThick, wallHeight, arenaH, blockEdge);
 
     // East wall
-    DrawCube({ arenaW * 0.5f + wallThick * 0.5f, wallHeight * 0.5f, 0.0f }, wallThick, wallHeight, arenaH, blockWood);
+    DrawTexCube({ arenaW * 0.5f + wallThick * 0.5f, wallHeight * 0.5f, 0.0f }, { wallThick, wallHeight, arenaH }, "tnk_block/block.2",
+                Tex("tnk_block/block.2") ? WHITE : blockWood);
     DrawCubeWires({ arenaW * 0.5f + wallThick * 0.5f, wallHeight * 0.5f, 0.0f }, wallThick, wallHeight, arenaH, blockEdge);
 }
 

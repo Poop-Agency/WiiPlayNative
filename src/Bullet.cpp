@@ -1,4 +1,14 @@
 #include "Bullet.hpp"
+
+// Shortest distance from point p to the segment a-b.
+static float SegmentPointDistance(Vector2 a, Vector2 b, Vector2 p) {
+    float dx = b.x - a.x, dy = b.y - a.y;
+    float len2 = dx * dx + dy * dy;
+    if (len2 < 1e-8f) return Vector2Distance(a, p);
+    float t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2;
+    t = t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t);
+    return Vector2Distance({ a.x + dx * t, a.y + dy * t }, p);
+}
 #include "Level.hpp"
 #include "Tank.hpp"
 #include "Mine.hpp"
@@ -71,6 +81,7 @@ void BulletManager::Update(float dt, Level& level, std::vector<Tank>& tanks, Min
         }
 
         // Continuous collision raycasting
+        const Vector2 prevPos = b.position;
         float moveDist = b.speed * dt;
         Vector2 moveDir = { b.velocity.x / b.speed, b.velocity.y / b.speed };
 
@@ -93,6 +104,7 @@ void BulletManager::Update(float dt, Level& level, std::vector<Tank>& tanks, Min
                 // Ricochet bounce!
                 audioEvents.push_back(SoundType::Ricochet);
                 --b.bouncesLeft;
+                b.armed = true;   // a bounced shell is lethal to its own firer
                 b.position = { hitPoint.x + hitNormal.x * 0.05f, hitPoint.y + hitNormal.y * 0.05f };
 
                 // Reflect velocity: v' = v - 2(v.n)n
@@ -144,17 +156,23 @@ void BulletManager::Update(float dt, Level& level, std::vector<Tank>& tanks, Min
             // ricochet kills you, and firing point blank into a wall is a way to
             // die rather than a safe move.
             //
-            // Until the class table is read, arm the shell once it has cleared the
-            // muzzle. That is OURS, not the original's: it reproduces the observed
-            // behaviour without pretending to know +0xA0.
-            float dist = Vector2Distance(b.position, tank.GetPosition());
+            // Until the class table is read, a shell arms on its first bounce.
+            // That rule is OURS, and it is the one that matches play: the shell
+            // leaving your own muzzle is harmless, the one coming back off a wall
+            // is not.
+            //
+            // An earlier attempt armed on distance from the firer instead, which
+            // looked equivalent and was not. BARREL_LENGTH equals TANK_RADIUS, so
+            // a shell is born at 0.9375 while the hit test needs 1.3125 — already
+            // inside its own tank. Flush against a wall it bounces back before
+            // ever reaching the arming distance, so it ghosted through the player
+            // forever instead of killing them.
+            if (tank.GetId() == b.ownerId && !b.armed) continue;
 
-            if (tank.GetId() == b.ownerId) {
-                if (!b.armed) {
-                    if (dist > TANK_RADIUS + BULLET_RADIUS * 2.0f) b.armed = true;
-                    continue;
-                }
-            }
+            // Swept test, not a point test at the landing position. A shell moves
+            // b.speed * dt in a frame and the tank is only 1.3125 across, so a
+            // discrete check at the new position can step straight over it.
+            float dist = SegmentPointDistance(prevPos, b.position, tank.GetPosition());
 
             if (dist < TANK_RADIUS + BULLET_RADIUS) {
                 tank.TakeDamage(particles);
