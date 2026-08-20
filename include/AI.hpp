@@ -18,6 +18,8 @@ struct AIState {
     float dodgeTimer;
     float aimTimer;   // counts down the re-aim beat, field 39 -> A+0x24
     float aimError;   // radians, held between re-aims, drawn from field 28
+    Vector2 heldAim;  // the aim decided on the last beat, kept until the next
+    bool hasAim;
 };
 
 class AIManager {

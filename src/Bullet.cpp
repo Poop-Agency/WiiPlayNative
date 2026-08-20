@@ -41,6 +41,7 @@ void BulletManager::SpawnBullet(uint32_t ownerId, Vector2 pos, Vector2 dir, floa
     b.bouncesLeft = bounces;
     b.isRocket = isRocket;
     b.lifetime = 10.0f;
+    b.armed = false;
     b.active = true;
     b.color = color;
     b.trailTimer = 0.0f;
@@ -128,19 +129,32 @@ void BulletManager::Update(float dt, Level& level, std::vector<Tank>& tanks, Min
         for (auto& tank : tanks) {
             if (!tank.IsAlive()) continue;
 
-            // A shell never damages the tank that fired it. Shell::checkCollisions
-            // loads the owner from +0xDC and compares it against the tank the
-            // query returned, skipping the hit outright when they match
-            // (0x80262fd0..0x80262fdc). There is no arming distance and no
-            // "once it has left me" condition: the exemption holds for the
-            // shell's whole life, ricochets included. +0xDC has a plain setter
-            // at 0x8026399c and getter at 0x802639ac, so it is the owner and
-            // nothing else. This is also why firing point blank at a wall is
-            // harmless -- the shell bounces straight back through its own tank
-            // and simply expires when its ricochet count runs out.
+            // Shell::checkCollisions compares the owner at +0xDC against the tank
+            // the query returned and skips the hit when they match
+            // (0x80262fd0..0x80262fdc). An earlier note read that as an exemption
+            // lasting the shell's whole life. It is not: the check is reached only
+            // when [shell+0xA0] < 4 (0x80262fc4..0x80262fcc). `bf CR0[LT]` jumps
+            // PAST the owner test, so a shell with +0xA0 >= 4 kills whoever fired
+            // it. +0xA0 is written once at spawn from a parameter block
+            // (0x80265820) and compared against 6 elsewhere (0x80262d1c), so it is
+            // a projectile class, not a counter.
+            //
+            // Which classes sit above 4 is not established yet. What is certain is
+            // that the old code was wrong, because in the real game your own
+            // ricochet kills you, and firing point blank into a wall is a way to
+            // die rather than a safe move.
+            //
+            // Until the class table is read, arm the shell once it has cleared the
+            // muzzle. That is OURS, not the original's: it reproduces the observed
+            // behaviour without pretending to know +0xA0.
             float dist = Vector2Distance(b.position, tank.GetPosition());
 
-            if (tank.GetId() == b.ownerId) continue;
+            if (tank.GetId() == b.ownerId) {
+                if (!b.armed) {
+                    if (dist > TANK_RADIUS + BULLET_RADIUS * 2.0f) b.armed = true;
+                    continue;
+                }
+            }
 
             if (dist < TANK_RADIUS + BULLET_RADIUS) {
                 tank.TakeDamage(particles);

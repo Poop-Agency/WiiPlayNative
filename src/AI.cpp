@@ -210,24 +210,31 @@ void AIManager::UpdateEnemy(Tank& enemy, AIState& state, float dt,
     // feels tighter than Brown plays. The mechanism is proven, the unit chain into
     // the table lookup at 0x8002fad0 is not fully unpicked. Worth measuring against
     // the real game before trusting the magnitude.
+    // The turret does not track continuously. [A+0x10C] counts down and only on
+    // expiry does 0x8026c7d4 recompute a heading; between beats the tank keeps
+    // aiming where it last decided. Recomputing every frame is what made these
+    // tanks play like an aimbot -- they were re-solving the intercept 60 times a
+    // second against a target the original only looks at every reaimFrames.
+    const TankConfig& aimCfg = enemy.GetConfig();
+    state.aimTimer -= dt;
     if (state.aimTimer <= 0.0f) {
-        const TankConfig& aimCfg = enemy.GetConfig();
         state.aimTimer = aimCfg.reaimFrames / 60.0f;
+
+        // Aim error, drawn fresh on each beat and held until the next one.
         if (aimCfg.aimSpread > 0.0f) {
             float draw = ((rand() / (float)RAND_MAX) * 2.0f - 1.0f) * aimCfg.aimSpread;
             state.aimError = draw * 0.711111f * (2.0f * PI / 65536.0f);
         } else {
             state.aimError = 0.0f;
         }
-    }
-    state.aimTimer -= dt;
 
-    if (state.aimError != 0.0f) {
         Vector2 me = enemy.GetPosition();
         Vector2 d = { enemy.aimTarget.x - me.x, enemy.aimTarget.y - me.y };
         float c = std::cos(state.aimError), sn = std::sin(state.aimError);
-        enemy.aimTarget = { me.x + d.x * c - d.y * sn, me.y + d.x * sn + d.y * c };
+        state.heldAim = { me.x + d.x * c - d.y * sn, me.y + d.x * sn + d.y * c };
+        state.hasAim = true;
     }
+    if (state.hasAim) enemy.aimTarget = state.heldAim;
 
     if (canShoot && state.shootTimer <= 0.0f) {
         enemy.shootRequested = true;
