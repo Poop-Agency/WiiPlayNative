@@ -28,7 +28,24 @@ void Level::Reset() {
 MissionDef Level::GetMissionDef(int missionNumber) {
     if (missionNumber < 1) missionNumber = 1;
 
-    // Authentic Stage Mapping from TnkGameParam.bin for Missions 1 to 20
+    // PROVENANCE: unverified. This table does NOT come from TnkGameParam.bin,
+    // whatever an earlier comment here claimed.
+    //
+    // Searched for the map-index sequence below (29, 27, 26, 9, 10, 0, 12, 13,
+    // 14, 28) as u8, u16 and u32 big-endian, at every offset and every 4-byte
+    // stride, and also with 1-based indices: absent from TnkGameParam.bin,
+    // absent from main.dol, absent from every file in common.carc.
+    //
+    // The enemy lists are not in the map files either. Tiles 144-151 occur once
+    // each and do not track enemy count — map 09 carries two of them for a
+    // three-enemy mission — so they are spawn slots, not tank types.
+    //
+    // So this table is ours until someone finds where the game keeps its own.
+    // Do not relabel it as extracted without an address to point at.
+    //
+    // TnkGameParam.bin is 10484 bytes and the ten 168-byte tank records account
+    // for only 1684 of them. The remaining 8800 are undocumented and are the
+    // obvious place to look next.
     static const std::vector<MissionDef> s_officialMissions = {
         /* Mission 1  - Map 29 */ { 29, { TankType::EnemyBrown } },
         /* Mission 2  - Map 27 */ { 27, { TankType::EnemyAsh, TankType::EnemyAsh } },
