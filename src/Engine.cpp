@@ -1,4 +1,5 @@
 #include "Engine.hpp"
+#include <cstdlib>
 #include <iostream>
 #include <algorithm>
 
@@ -109,10 +110,23 @@ void Engine::Render() {
 }
 
 void Engine::Run() {
+    // Smoke test hook: WII_TANKS_SHOT=path renders that many frames, writes a
+    // screenshot and quits. Building is not evidence that anything draws, and
+    // this is the cheapest way to look at the real frame.
+    const char* shot = getenv("WII_TANKS_SHOT");
+    int shotAfter = shot ? (getenv("WII_TANKS_SHOT_FRAMES")
+                            ? atoi(getenv("WII_TANKS_SHOT_FRAMES")) : 90) : -1;
+    int frame = 0;
+
     while (!WindowShouldClose() && m_running) {
         float dt = GetFrameTime();
         ProcessInput();
         Update(dt);
         Render();
+
+        if (shotAfter >= 0 && ++frame >= shotAfter) {
+            TakeScreenshot(shot);
+            m_running = false;
+        }
     }
 }

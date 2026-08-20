@@ -5,6 +5,7 @@
 #include <cmath>
 #include <iostream>
 #include <string>
+#include <filesystem>
 
 Renderer3D::Renderer3D()
     : m_cameraMode(0)
@@ -28,6 +29,47 @@ void Renderer3D::Init(int screenWidth, int screenHeight) {
     m_camera.up = { 0.0f, 1.0f, 0.0f };
     m_camera.fovy = 38.0f;
     m_camera.projection = CAMERA_PERSPECTIVE;
+
+    LoadRippedTextures();
+}
+
+void Renderer3D::LoadRippedTextures() {
+    namespace fs = std::filesystem;
+    const fs::path root = "assets/ripped";
+    if (!fs::exists(root)) {
+        std::cout << "assets/ripped missing -- drawing flat colours. "
+                     "Run tools/rip_textures.py to decode them." << std::endl;
+        return;
+    }
+    for (auto& dir : fs::directory_iterator(root)) {
+        if (!dir.is_directory()) continue;
+        for (auto& f : fs::directory_iterator(dir.path())) {
+            if (f.path().extension() != ".png") continue;
+            Texture2D t = LoadTexture(f.path().string().c_str());
+            if (t.id == 0) continue;
+            SetTextureFilter(t, TEXTURE_FILTER_BILINEAR);
+            SetTextureWrap(t, TEXTURE_WRAP_REPEAT);
+            m_tex[dir.path().filename().string() + "/" + f.path().stem().string()] = t;
+        }
+    }
+    m_cube = LoadModelFromMesh(GenMeshCube(1.0f, 1.0f, 1.0f));
+    m_cubeReady = true;
+    std::cout << "Loaded " << m_tex.size() << " ripped textures." << std::endl;
+}
+
+const Texture2D* Renderer3D::Tex(const std::string& key) const {
+    auto it = m_tex.find(key);
+    return it == m_tex.end() ? nullptr : &it->second;
+}
+
+void Renderer3D::DrawTexCube(Vector3 pos, Vector3 size, const std::string& key, Color tint) {
+    const Texture2D* t = m_cubeReady ? Tex(key) : nullptr;
+    if (!t) {
+        DrawCube(pos, size.x, size.y, size.z, tint);
+        return;
+    }
+    m_cube.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = *t;
+    DrawModelEx(m_cube, pos, { 0, 1, 0 }, 0.0f, size, tint);
 }
 
 void Renderer3D::ToggleCameraMode() {
@@ -145,14 +187,21 @@ void Renderer3D::DrawBlocks(const Level& level) {
             Vector2 pos = level.GridToWorld(x, y);
 
             if (level.IsDestructible(x, y)) {
-                // Breakable Cork Block (Dotted warm cork matching Image 0)
-                DrawCube({ pos.x, 0.65f, pos.y }, CELL_SIZE * 0.96f, 1.3f, CELL_SIZE * 0.96f, { 210, 160, 115, 255 });
+                // Breakable cork block. block_harf is the game's own half-height
+                // block skin; the flat colour stays as the fallback.
+                DrawTexCube({ pos.x, 0.65f, pos.y },
+                            { CELL_SIZE * 0.96f, 1.3f, CELL_SIZE * 0.96f },
+                            "tnk_block/block_harf.1",
+                            Tex("tnk_block/block_harf.1") ? WHITE : Color{ 210, 160, 115, 255 });
                 DrawCubeWires({ pos.x, 0.65f, pos.y }, CELL_SIZE * 0.96f, 1.3f, CELL_SIZE * 0.96f, { 175, 130, 85, 255 });
                 // Cork texture dots
                 DrawCube({ pos.x, 1.31f, pos.y }, CELL_SIZE * 0.82f, 0.02f, CELL_SIZE * 0.82f, { 225, 175, 130, 255 });
             } else if (level.IsSolid(x, y)) {
-                // Solid Wooden Toy Block (Natural pine/oak block matching Image 0)
-                DrawCube({ pos.x, 0.7f, pos.y }, CELL_SIZE * 0.96f, 1.4f, CELL_SIZE * 0.96f, { 235, 195, 130, 255 });
+                // Solid wooden toy block, the game's own block skin.
+                DrawTexCube({ pos.x, 0.7f, pos.y },
+                            { CELL_SIZE * 0.96f, 1.4f, CELL_SIZE * 0.96f },
+                            "tnk_block/block.1",
+                            Tex("tnk_block/block.1") ? WHITE : Color{ 235, 195, 130, 255 });
                 DrawCubeWires({ pos.x, 0.7f, pos.y }, CELL_SIZE * 0.96f, 1.4f, CELL_SIZE * 0.96f, { 190, 150, 90, 255 });
                 DrawCube({ pos.x, 1.41f, pos.y }, CELL_SIZE * 0.82f, 0.02f, CELL_SIZE * 0.82f, { 250, 215, 155, 255 });
             }
@@ -174,6 +223,27 @@ void Renderer3D::DrawTanks(const std::vector<Tank>& tanks) {
         if (!tank.IsAlive()) continue;
         DrawSingleTank(tank);
     }
+}
+
+// The skins keep their original names, so Teal is "marin" and Ash is "ash".
+// Players 1 and 2 are the blue and red tanks the real game gives them.
+static std::string TankSkin(TankType t) {
+    switch (t) {
+        case TankType::Player1:     return "tnk_tank/tank_blue";
+        case TankType::Player2:     return "tnk_tank/tank_red";
+        case TankType::Player3:     return "tnk_tank/tank_green";
+        case TankType::Player4:     return "tnk_tank/tank_yellow";
+        case TankType::EnemyBrown:  return "tnk_tank/tank_brown";
+        case TankType::EnemyAsh:    return "tnk_tank/tank_ash";
+        case TankType::EnemyTeal:   return "tnk_tank/tank_marin";
+        case TankType::EnemyYellow: return "tnk_tank/tank_yellow";
+        case TankType::EnemyRed:    return "tnk_tank/tank_red";
+        case TankType::EnemyGreen:  return "tnk_tank/tank_green";
+        case TankType::EnemyPurple: return "tnk_tank/tank_purple";
+        case TankType::EnemyWhite:  return "tnk_tank/tank_white";
+        case TankType::EnemyBlack:  return "tnk_tank/tank_black";
+    }
+    return "";
 }
 
 void Renderer3D::DrawSingleTank(const Tank& tank) {
@@ -201,6 +271,8 @@ void Renderer3D::DrawSingleTank(const Tank& tank) {
     rlPushMatrix();
     rlRotatef(-chassisAngle * RAD2DEG, 0.0f, 1.0f, 0.0f);
 
+    const std::string skin = TankSkin(tank.GetType());
+
     // Left tread
     DrawCube({ 0.0f, 0.28f, 0.60f }, 1.6f, 0.44f, 0.38f, treadCol);
     DrawCubeWires({ 0.0f, 0.28f, 0.60f }, 1.6f, 0.44f, 0.38f, { 20, 20, 20, treadCol.a });
@@ -209,8 +281,11 @@ void Renderer3D::DrawSingleTank(const Tank& tank) {
     DrawCube({ 0.0f, 0.28f, -0.60f }, 1.6f, 0.44f, 0.38f, treadCol);
     DrawCubeWires({ 0.0f, 0.28f, -0.60f }, 1.6f, 0.44f, 0.38f, { 20, 20, 20, treadCol.a });
 
-    // Central chassis body
-    DrawCube({ 0.0f, 0.36f, 0.0f }, 1.45f, 0.48f, 0.95f, bodyCol);
+    // Central chassis body. The skin already carries the tank's colour, so it is
+    // drawn white when textured -- tinting by bodyCol on top would double it up.
+    // Alpha still rides the tint so White's stealth fade keeps working.
+    DrawTexCube({ 0.0f, 0.36f, 0.0f }, { 1.45f, 0.48f, 0.95f }, skin,
+                Tex(skin) ? Color{ 255, 255, 255, bodyCol.a } : bodyCol);
     DrawCubeWires({ 0.0f, 0.36f, 0.0f }, 1.45f, 0.48f, 0.95f, { 255, 255, 255, static_cast<unsigned char>(70 * alpha) });
 
     rlPopMatrix(); // End chassis
@@ -223,7 +298,8 @@ void Renderer3D::DrawSingleTank(const Tank& tank) {
     rlTranslatef(-recoil, 0.0f, 0.0f);
 
     // Turret dome
-    DrawCube({ 0.0f, 0.66f, 0.0f }, 0.82f, 0.38f, 0.82f, turretCol);
+    DrawTexCube({ 0.0f, 0.66f, 0.0f }, { 0.82f, 0.38f, 0.82f }, skin,
+                Tex(skin) ? Color{ 255, 255, 255, turretCol.a } : turretCol);
     DrawCubeWires({ 0.0f, 0.66f, 0.0f }, 0.82f, 0.38f, 0.82f, { 255, 255, 255, static_cast<unsigned char>(90 * alpha) });
 
     // Cannon barrel
