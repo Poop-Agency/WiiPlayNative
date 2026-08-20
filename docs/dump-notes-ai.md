@@ -242,3 +242,84 @@ the scan origin.
 
 Reproducing this requires the same order: both stagger passes, in that
 order, before any tank updates, with exactly one RNG draw each.
+
+---
+
+# Le tick par frame du contrôleur AI — 0x8026bb3c
+
+Décodé instruction par instruction et recoupé deux fois (extraction Claude,
+réfutation agy), puis les branchements re-vérifiés à la main sur le binaire.
+`r3`/`r30` = objet A. Table complète des verdicts : `re/VERDICTS.md`.
+
+## Trois compteurs, pas deux
+
+On en connaissait deux. Il y en a **trois**, tous décrémentés dans ce tick :
+
+| compteur | callee sur expiration | VMA du `bl`  | garde      | rechargement |
+|----------|-----------------------|--------------|------------|--------------|
+| `[A+0x10C]` | `0x8026c7d4`       | `0x8026bb98` | aucune     | fixe, `[A+0x24]` |
+| `[A+0x110]` | `0x8026c730`       | `0x8026bcb4` | `[A+0x70]` | aléatoire, bornes `[A+0x28]`/`[A+0x2C]` |
+| `[A+0x118]` | `0x8026c5ac`       | `0x8026bd38` | `[A+0x74]` | aléatoire, bornes `[A+0x54]`/`[A+0x58]` |
+
+`[A+0x10C]` est le nouveau : il se recharge par un simple `lwz 0, 36(r30)` —
+**une valeur fixe, sans tirage RNG**, contrairement aux deux autres.
+
+## La forme exacte du décrément
+
+Identique aux trois, ex. pour `[A+0x110]` :
+
+    8026bc90  lwz    r3, 272(r30)     ; charge le compteur
+    8026bc94  addic. r0, r3, -1       ; r0 = r3-1, positionne CR0
+    8026bc98  stw    r0, 272(r30)     ; ré-écrit AVANT de brancher
+    8026bc9c  bt     CR0[GT], .+124   ; si r3-1 > 0, on saute l'action
+
+L'action part donc quand `r3 - 1 <= 0`, c'est-à-dire **quand le compteur valait
+1 et tombe à 0**. Cohérent avec les deux passes d'étalement déjà documentées :
+un char laissé à 1 agit à la frame suivante, un char poussé à 2 devient candidat
+la frame d'après.
+
+## Les gardes sont des verrous, pas des autorisations
+
+    8026bca4  cmpwi r0, 0            ; r0 = [A+0x70]
+    8026bca8  bf    CR0[EQ], .+16    ; si != 0, saute l'appel
+
+L'appel n'a lieu **que si le champ vaut 0**. `[A+0x70]` et `[A+0x74]` sont donc
+des drapeaux d'inhibition (occupé / interdit), pas des drapeaux d'activation.
+Se tromper de polarité ici ferait tirer les chars exactement quand ils ne doivent pas.
+
+## Deux drapeaux remis à zéro à chaque frame
+
+    8026bb88  stb r7, 264(r3)   ; [A+0x108] <- 0
+    8026bb8c  stb r7, 276(r3)   ; [A+0x114] <- 0
+
+Remis à zéro en tête de tick, repositionnés par les callees. Ce sont des
+requêtes valables une frame. `0x8026c7bc` écrit 1 dans `[A+0x108]`, `0x8026c718`
+écrit 1 dans `[A+0x114]`.
+
+Note d'honnêteté : que `[A+0x108]` soit « le drapeau de tir » et `[A+0x114]`
+« le drapeau de mine » n'est **pas** prouvé par le code. Le décodage est certain,
+l'interprétation gameplay ne l'est pas — l'auditeur l'a explicitement rejetée.
+Ce qui est certain : ce sont deux requêtes booléennes d'une frame, l'une posée
+par le callee de `[A+0x110]`, l'autre par celui de `[A+0x118]`.
+
+## Un interrupteur global au-dessus des trois
+
+    8026bc7c  lwz    r3, 284(r30)      ; [A+0x11C] -> objet lié
+    8026bc80  lwz    r3, 408(r3)       ; [+0x198]
+    8026bc88  rlwinm. r0, r0, 0, 30, 30 ; isole le bit 1
+    8026bc8c  bf     CR0[EQ], .+272    ; si posé, saute TOUTE la section timers
+
+Toute la logique de décision est court-circuitée quand ce bit est posé.
+
+## Fin de tick
+
+    8026bda8  bl 0x8026c280            ; sélecteur d'action, appelé sans condition
+
+Contrairement aux trois callees ci-dessus, `0x8026c280` tourne à **chaque** frame.
+
+## Ce qui reste non prouvé
+
+`0x8026c730` et `0x8026c5ac` portent des noms de travail (« tir », « mine »)
+venant d'une seule source non recoupée. Les 33 claims gameplay de `0x8026c730`
+ont toutes été rejetées comme non forcées par le code. Ne rien écrire dans `src/`
+sur la foi de ces noms.
