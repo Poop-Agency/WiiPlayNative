@@ -152,18 +152,22 @@ bool Tank::Shoot(BulletManager& bullets, ParticleManager& particles, const Level
     // The original does not place the shell at the barrel tip and hope. 0x8026b5e4
     // marches it out from the tank in steps, from index [obj+0xD0] to [obj+0xD4],
     // calling the test at 0x8026b994 on each one (loop at 0x8026b6b4..0x8026b6dc).
-    // A shell that cannot be walked out to its muzzle is never placed, which is
-    // why a point-blank shot at a wall vanishes instead of ricocheting back into
-    // the tank that fired it.
+    // The step count comes back to the caller, which then decides: at 0x8026d438
+    // a clear low bit means nothing was hit and the shell lives; otherwise
+    // 0x8026d444 compares the count with 6 and `bf CR0[GT]` at 0x8026d448 jumps
+    // to the keep path at 0x8026d690 when it is NOT greater. So a shallow overlap
+    // is nudged clear and kept, and only a shell buried more than six steps deep
+    // is deleted outright at 0x8026d490.
     //
-    // Ours is the cheap equivalent: one ray from the hull centre to the muzzle.
-    // The shot is still spent — cooldown, flash and report all happen — there is
-    // simply no shell.
-    Vector2 hitPoint, hitNormal;
-    int hitTileX, hitTileY;
-    bool blocked = level.Raycast(m_position, shootDir, BARREL_LENGTH,
-                                 hitPoint, hitNormal, hitTileX, hitTileY, true);
-    if (blocked) {
+    // That is why a point-blank shot vanishes instead of ricocheting back into
+    // the tank that fired it: flush against a wall, the muzzle is buried.
+    //
+    // Ours is the cheap equivalent: ask whether the muzzle itself has ended up
+    // inside a block. Testing the whole centre-to-muzzle ray instead would also
+    // eat shots that merely clip a corner, and those the original keeps.
+    int muzzleX = static_cast<int>(barrelTip.x / CELL_SIZE + level.GetWidth() * 0.5f);
+    int muzzleY = static_cast<int>(barrelTip.y / CELL_SIZE + level.GetHeight() * 0.5f);
+    if (level.IsSolid(muzzleX, muzzleY)) {
         m_shootCooldown = m_config.shootCooldown;
         m_recoil = 0.35f;
         Vector3 tip3D = { barrelTip.x, 0.4f, barrelTip.y };
