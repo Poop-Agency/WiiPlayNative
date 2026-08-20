@@ -14,7 +14,7 @@ public:
     ~Tank();
 
     void Update(float dt, Level& level, ParticleManager& particles);
-    bool Shoot(BulletManager& bullets, ParticleManager& particles);
+    bool Shoot(BulletManager& bullets, ParticleManager& particles, const Level& level);
     bool PlantMine(MineManager& mines);
     void TakeDamage(ParticleManager& particles);
     void Respawn(Vector2 spawnPos);

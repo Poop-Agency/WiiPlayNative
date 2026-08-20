@@ -137,16 +137,39 @@ void Tank::Update(float dt, Level& level, ParticleManager& particles) {
     }
 }
 
-bool Tank::Shoot(BulletManager& bullets, ParticleManager& particles) {
+bool Tank::Shoot(BulletManager& bullets, ParticleManager& particles, const Level& level) {
     if (!m_isAlive || m_shootCooldown > 0.0f) return false;
 
     int activeCount = bullets.CountActiveBulletsForOwner(m_id);
     if (activeCount >= m_config.maxBullets) return false;
 
-    // BARREL_LENGTH is the hull radius, so the muzzle sits on the hull edge and
-    // can never be inside a block.
     Vector2 barrelTip = GetBarrelTip();
     Vector2 shootDir = { std::cos(m_turretAngle), std::sin(m_turretAngle) };
+
+    // A note here used to claim the muzzle sits on the hull edge and so can never
+    // be inside a block. Park against a wall and it plainly is.
+    //
+    // The original does not place the shell at the barrel tip and hope. 0x8026b5e4
+    // marches it out from the tank in steps, from index [obj+0xD0] to [obj+0xD4],
+    // calling the test at 0x8026b994 on each one (loop at 0x8026b6b4..0x8026b6dc).
+    // A shell that cannot be walked out to its muzzle is never placed, which is
+    // why a point-blank shot at a wall vanishes instead of ricocheting back into
+    // the tank that fired it.
+    //
+    // Ours is the cheap equivalent: one ray from the hull centre to the muzzle.
+    // The shot is still spent — cooldown, flash and report all happen — there is
+    // simply no shell.
+    Vector2 hitPoint, hitNormal;
+    int hitTileX, hitTileY;
+    bool blocked = level.Raycast(m_position, shootDir, BARREL_LENGTH,
+                                 hitPoint, hitNormal, hitTileX, hitTileY, true);
+    if (blocked) {
+        m_shootCooldown = m_config.shootCooldown;
+        m_recoil = 0.35f;
+        Vector3 tip3D = { barrelTip.x, 0.4f, barrelTip.y };
+        particles.AddMuzzleFlash(tip3D, { shootDir.x, 0.0f, shootDir.y }, m_config.turretColor);
+        return true;
+    }
 
     bullets.SpawnBullet(
         m_id,
