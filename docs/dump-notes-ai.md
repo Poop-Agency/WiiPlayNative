@@ -345,7 +345,7 @@ Il y a bien une **limite de balles simultanées par char**, lue dans un tableau
 global indexé par l'id. Quand la limite est atteinte le tir n'est pas perdu :
 `[A+0x108]` passe à 1, ce qui reporte l'intention sur une frame suivante.
 
-## `0x8026c5ac` — pose de mine. PROBABLE, pas prouvé.
+## `0x8026c5ac` — pose de mine. Confirmé par recoupement.
 
 Faisceau d'indices concordants :
 
@@ -358,14 +358,28 @@ Faisceau d'indices concordants :
   (`0x8026c6a4`) : tirage RNG dans `[0, 100)` comparé à `A[0x60]` si recouvrement,
   à `A[0x5C]` sinon.
 
-Ce qui manque pour prouver : la valeur d'énumération derrière le type 2, et
-l'identité des tableaux globaux `0x80456C68` et `0x80456C78`. Tant que ce n'est
-pas établi, ne pas câbler « mine » en dur dans `src/`.
+L'énumération derrière le type 2 reste non identifiée, donc le désassemblage seul
+s'arrêtait à « probable ». Ce qui tranche vient d'ailleurs : les bornes du timer
+`[A+0x118]` sont les champs 4 et 3 du record, et ces deux champs sont non nuls
+**exactement** pour Joueur, Yellow, Purple, White et Black — la liste des chars
+qui posent des mines. Les cinq autres ont des bornes à zéro. Un tel alignement
+n'arrive pas par accident.
 
-## `0x8026c7d4` — NON TRANCHÉ.
+## `0x8026c7d4` — re-visée avec dispersion.
 
-Il faut d'abord `0x800e82e0`, `0x800e829c`, `0x8002ff8c`, `0x800e7fe8`
-(désassemblés dans `re/asm/`, l'analyse reste à faire).
+    8026cad8  bl 0x8002ff8c   ; matrice de rotation depuis des angles d'Euler,
+                              ; le lacet = tirage RNG mis a l'echelle par [A+0x1C]
+    8026cae8  bl 0x800e7fe8   ; applique la matrice au vecteur normalise vers la
+                              ; cible, resultat dans [A+0x80]
+
+Rien n'est alloué, aucun projectile n'est créé, aucun compteur ni cooldown n'est
+touché : la seule sortie est le vecteur `[A+0x80]`. C'est le seul des trois
+callees à tourner sans garde et à se recharger sur une valeur fixe (champ 39),
+donc à cadence constante par char.
+
+`[A+0x1C]` est le champ 28 du record. Ses valeurs par char reproduisent le
+comportement connu du jeu — Brown 170 le plus dispersé, Teal 0 parfaitement
+droit, Black 5 le plus précis. Reste non établi : l'unité d'angle.
 
 # Correction : `0x80269288` n'est pas deux fonctions
 
