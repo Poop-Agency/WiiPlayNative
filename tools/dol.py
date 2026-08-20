@@ -170,6 +170,18 @@ def selftest():
     assert _ps(0x4E800020) is None, "blr must not be claimed by the ps decoder"
     print("ps decoding OK (%d words)" % len(want))
 
+    # Function bounds. 0x80269288 ends at a blr 418 instructions in; a forward
+    # `b` at 0x80269400 jumps to 0x802697dc, still inside it. Stopping at that
+    # branch truncated the listing to 95 and produced a confident misreading.
+    # 0x800e829c has no `stwu` prologue at all, so the walk-back overshoots
+    # backwards and must recover forwards.
+    for q, start, end in ((0x80269288, 0x80269288, 0x8026990C),
+                          (0x8026BB3C, 0x8026BB3C, 0x8026BDC8),
+                          (0x800E829C, 0x800E829C, 0x800E82DC)):
+        got = bounds(q)
+        assert got == (start, end), "bounds(%08x) = %08x,%08x" % (q, *got)
+    print("bounds OK (%d functions)" % 3)
+
 
 # r2 is the read-only small-data base, set in __init_registers at 0x8006330c.
 # Float constants live below it, so `lfs fN, -0x1234(r2)` is a literal.
@@ -218,10 +230,52 @@ def bounds(vma):
         if (_w32(p) >> 16) == 0x9421 and (_w32(p - 4) == 0x4E800020 or (_w32(p - 4) >> 26) == 18):
             break
         p -= 4
-    e = vma
-    while _w32(e) != 0x4E800020:
-        e += 4
+    e = _end(p)
+    if e < vma:
+        # The walk-back landed in an earlier function: Metrowerks schedules loads
+        # ahead of `stwu`, so not every function starts with a recognisable
+        # prologue. Recover by stepping function-by-function from that known end
+        # -- the instruction after a terminator starts the next function.
+        p = e + 4
+        while (e := _end(p)) < vma:
+            p = e + 4
     return p, e
+
+
+def _btarget(w, a):
+    """Absolute target of a b/bc at `a`, or None if it is not a branch."""
+    op = w >> 26
+    if op == 18:                                   # b / ba / bl / bla
+        t = w & 0x03FFFFFC
+        t -= 0x04000000 if t & 0x02000000 else 0
+        return t if (w & 2) else a + t
+    if op == 16:                                   # bc
+        t = w & 0xFFFC
+        t -= 0x10000 if t & 0x8000 else 0
+        return t if (w & 2) else a + t
+    return None
+
+
+def _end(start):
+    """VMA of the instruction that really ends the function at `start`.
+
+    Scanning to the first `blr` or unconditional `b` is wrong: Metrowerks emits
+    forward `b` jumps *inside* a function, and stopping at one truncates the
+    listing. A truncated listing still reads as coherent code, which is worse
+    than an obvious failure -- it produced two contradictory readings of
+    0x80269288 before this was fixed. So a terminator only counts once no
+    earlier branch reaches past it.
+    """
+    a, far = start, start
+    while a < start + 8000:
+        w = _w32(a)
+        t = _btarget(w, a)
+        if t is not None and start < t < start + 8000 and not (w & 1):
+            far = max(far, t)
+        if (w == 0x4E800020 or ((w >> 26) == 18 and not (w & 1))) and a >= far:
+            return a
+        a += 4
+    return a
 
 
 def find(kind, value):
@@ -285,13 +339,8 @@ if __name__ == "__main__":
         if a != q and (_w32(q) >> 16) != 0x9421:
             print("  warning: start is a guess -- %08x is not itself a prologue," % q)
             print("  and a function may begin with a scheduled load before `stwu`.")
-        n = 0
-        while n < 2000:
-            w = _w32(q + n * 4)
-            n += 1
-            if w == 0x4E800020 or ((w >> 26) == 18 and not (w & 1)):
-                break
-        print("  forward from %08x: %d instructions to the next blr/tail-branch" % (q, n))
+        n = (_end(q) - q) // 4 + 1
+        print("  forward from %08x: %d instructions to the real end" % (q, n))
     elif sys.argv[1] == "dis":
         dis(int(sys.argv[2], 0), int(sys.argv[3]) if len(sys.argv) > 3 else 40)
     elif sys.argv[1] == "find":
