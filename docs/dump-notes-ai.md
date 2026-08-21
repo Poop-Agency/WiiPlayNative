@@ -434,3 +434,46 @@ Résolues depuis r2 = 0x8045EF00, valeurs brutes, sans interprétation :
 
 22.0 est la largeur de grille. 176 = 22 x 8. 0.7111111 vaut exactement 32/45 ;
 son rôle n'est pas établi et ne doit pas être deviné.
+
+## La tourelle ne se cale pas d'un coup (champ 38)
+
+Le champ 38 du record est recopié en `A+0x20` (`0x8026c104 lfs`, `0x8026c1d4
+stfs`). Le tick le lit six fois, en `0x8026bbac`, `0x8026bbc4`, `0x8026bbd8`
+puis `0x8026bbf4`, `0x8026bc0c`, `0x8026bc20` :
+
+    P+ = A[0x8C..0x94] + A[0x98..0xA0] * s     (fmadds, trois composantes)
+    P- = A[0x8C..0x94] - A[0x98..0xA0] * s     (fnmsubs)
+
+les deux normalisés par `0x800e829c`. `A+0x8C` est une direction unitaire,
+`A+0x98` le vecteur perpendiculaire que `0x8026bc78` recalcule à partir d'elle et
+d'un vecteur constant en `0x80453528`. Donc `P±` sont les deux directions
+obtenues en tournant de `±atan(s)`.
+
+Suivent deux appels à `0x801b6ab0(out, a, b, c)`, qui compare `dot(a,b)` et
+`dot(a,c)` en paired-single et recopie dans `out` celui des deux qui gagne
+(`fcmpo` puis `cror 2,1,2`, donc « b si `dot(a,b) >= dot(a,c)` ») :
+
+1. `0x8026bc44` : `pick = plus_proche_de(A+0x80, P-, P+)` — le pas dans le bon sens.
+2. `0x8026bc58` : `A+0x8C = plus_proche_de(A+0x8C, pick, A+0x80)` — la cible si
+   elle est déjà dans le cône, sinon le pas.
+
+C'est une rotation vers la cible bornée à un cône par frame. `A+0x80` est la
+direction visée : le callee de visée l'écrit en `0x8026cae8`, après avoir tiré
+l'écart uniformément dans `[-champ 28, +champ 28]` (`0x8026ca60`..`0x8026cac0`,
+LCG XOR LFSR, `& 0x7FFFFF` puis `* 1.19209e-07`) et construit la rotation
+correspondante. Donc `A+0x8C` est bien la tourelle, pas la caisse.
+
+`s` est la tangente de l'angle, pas l'angle :
+
+| char | champ 38 | °/frame | °/s |
+|------|----------|---------|-----|
+| Joueur, Teal | 0.05 | 2.862 | 171.7 |
+| Purple, White, Black | 0.03 | 1.718 | 103.1 |
+| Red, Yellow, Green | 0.02 | 1.146 | 68.7 |
+| Brown, Ash | 0.01 | 0.573 | 34.4 |
+
+Un demi-tour de tourelle prend 315 frames au Brown, soit 5,2 s. C'est la
+deuxième moitié de son imprécision, l'autre étant les 60 frames de visée figée
+du champ 39 : le canon n'a simplement pas le temps de suivre.
+
+Le record du joueur porte le champ lui aussi, à 0.05.

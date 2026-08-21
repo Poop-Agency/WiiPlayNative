@@ -81,10 +81,17 @@ void Tank::Update(float dt, Level& level, ParticleManager& particles) {
         m_stealthAlpha = 1.0f;
     }
 
-    // Turret aiming towards target
+    // Turret aiming towards target. The barrel does not snap: 0x8026bbac builds
+    // fwd +- turretSlewTan * right and 0x801b6ab0 keeps the step or the target,
+    // whichever already points closer, so the swing is clamped to one cone per
+    // frame at 60 Hz. See turretSlewTan in Common.hpp.
     Vector2 toTarget = { aimTarget.x - m_position.x, aimTarget.y - m_position.y };
     float targetTurretAngle = std::atan2(toTarget.y, toTarget.x);
-    m_turretAngle = targetTurretAngle;
+    float turretDiff = NormalizeAngle(targetTurretAngle - m_turretAngle);
+    float maxSwing = std::atan(m_config.turretSlewTan) * 60.0f * dt;
+    if (turretDiff > maxSwing) turretDiff = maxSwing;
+    else if (turretDiff < -maxSwing) turretDiff = -maxSwing;
+    m_turretAngle = NormalizeAngle(m_turretAngle + turretDiff);
 
     // Chassis movement
     float inputLen = Vector2Length(moveInput);
