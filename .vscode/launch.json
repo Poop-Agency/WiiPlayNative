@@ -1,0 +1,16 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug wii_tanks",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/wii_tanks",
+      "cwd": "${workspaceFolder}",
+      "MIMode": "gdb",
+      "miDebuggerPath": "/usr/bin/gdb",
+      "preLaunchTask": "CMake: build",
+      "externalConsole": false
+    }
+  ]
+}

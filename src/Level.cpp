@@ -4,6 +4,7 @@
 #include <sstream>
 #include <iomanip>
 #include <algorithm>
+#include <cstdlib>
 
 Level::Level()
     : m_width(GRID_WIDTH)
@@ -24,100 +25,42 @@ void Level::Reset() {
     m_player2Spawn = { -ARENA_HALF_W + CELL_SIZE * 2, CELL_SIZE * 2 };
 }
 
-// Exact Nintendo Wii Play Tanks! 100 Missions definitions from TnkGameParam.bin
+#include "MissionTable.inc"
+
+// The mission table is extracted, not invented: assets/param/TnkGameParam.bin
+// offset 1684, 100 rows of 88 bytes.  tools/mission_table.py regenerates
+// MissionTable.inc and lists the main.dol addresses that pin every field --
+// 0x80265bdc for the base and stride, 0x80265444/0x8026545c for the map range,
+// 0x80265cb8 for the slot encoding.
 MissionDef Level::GetMissionDef(int missionNumber) {
     if (missionNumber < 1) missionNumber = 1;
+    if (missionNumber > 100) missionNumber = 100;
+    const MissionRow& row = kMissionTable[missionNumber - 1];
 
-    // PROVENANCE: unverified. This table does NOT come from TnkGameParam.bin,
-    // whatever an earlier comment here claimed.
-    //
-    // Searched for the map-index sequence below (29, 27, 26, 9, 10, 0, 12, 13,
-    // 14, 28) as u8, u16 and u32 big-endian, at every offset and every 4-byte
-    // stride, and also with 1-based indices: absent from TnkGameParam.bin,
-    // absent from main.dol, absent from every file in common.carc.
-    //
-    // The enemy lists are not in the map files either. Tiles 144-151 occur once
-    // each and do not track enemy count — map 09 carries two of them for a
-    // three-enemy mission — so they are spawn slots, not tank types.
-    //
-    // So this table is ours until someone finds where the game keeps its own.
-    // Do not relabel it as extracted without an address to point at.
-    //
-    // TnkGameParam.bin is 10484 bytes and the ten 168-byte tank records account
-    // for only 1684 of them. The remaining 8800 are undocumented and are the
-    // obvious place to look next.
-    static const std::vector<MissionDef> s_officialMissions = {
-        /* Mission 1  - Map 29 */ { 29, { TankType::EnemyBrown } },
-        /* Mission 2  - Map 27 */ { 27, { TankType::EnemyAsh, TankType::EnemyAsh } },
-        /* Mission 3  - Map 26 */ { 26, { TankType::EnemyBrown, TankType::EnemyAsh } },
-        /* Mission 4  - Map 09 */ { 9,  { TankType::EnemyBrown, TankType::EnemyAsh, TankType::EnemyAsh } },
-        /* Mission 5  - Map 10 */ { 10, { TankType::EnemyTeal, TankType::EnemyBrown } },
-        /* Mission 6  - Map 00 */ { 0,  { TankType::EnemyTeal, TankType::EnemyAsh, TankType::EnemyAsh } },
-        /* Mission 7  - Map 12 */ { 12, { TankType::EnemyTeal, TankType::EnemyTeal, TankType::EnemyBrown } },
-        /* Mission 8  - Map 13 */ { 13, { TankType::EnemyYellow, TankType::EnemyAsh, TankType::EnemyAsh } },
-        /* Mission 9  - Map 14 */ { 14, { TankType::EnemyYellow, TankType::EnemyYellow, TankType::EnemyTeal } },
-        /* Mission 10 - Map 28 */ { 28, { TankType::EnemyRed, TankType::EnemyAsh, TankType::EnemyAsh } },
-        /* Mission 11 - Map 15 */ { 15, { TankType::EnemyRed, TankType::EnemyYellow, TankType::EnemyBrown } },
-        /* Mission 12 - Map 16 */ { 16, { TankType::EnemyRed, TankType::EnemyRed, TankType::EnemyTeal } },
-        /* Mission 13 - Map 17 */ { 17, { TankType::EnemyGreen, TankType::EnemyAsh, TankType::EnemyAsh } },
-        /* Mission 14 - Map 18 */ { 18, { TankType::EnemyGreen, TankType::EnemyTeal, TankType::EnemyYellow } },
-        /* Mission 15 - Map 19 */ { 19, { TankType::EnemyGreen, TankType::EnemyGreen, TankType::EnemyRed } },
-        /* Mission 16 - Map 20 */ { 20, { TankType::EnemyPurple, TankType::EnemyYellow, TankType::EnemyYellow } },
-        /* Mission 17 - Map 21 */ { 21, { TankType::EnemyPurple, TankType::EnemyGreen, TankType::EnemyTeal } },
-        /* Mission 18 - Map 22 */ { 22, { TankType::EnemyPurple, TankType::EnemyPurple, TankType::EnemyRed } },
-        /* Mission 19 - Map 23 */ { 23, { TankType::EnemyWhite, TankType::EnemyTeal, TankType::EnemyTeal } },
-        /* Mission 20 - Map 24 */ { 24, { TankType::EnemyBlack, TankType::EnemyRed, TankType::EnemyRed } }
-    };
-
-    if (missionNumber <= 20) {
-        return s_officialMissions[missionNumber - 1];
+    // 0x80265470: equal bounds are used as-is, otherwise the game draws in
+    // [lo, hi] inclusive (0x802654b0 computes hi - lo + 1).
+    int mapIndex = row.mapLo;
+    if (row.mapHi != row.mapLo) {
+        mapIndex = row.mapLo + rand() % (row.mapHi - row.mapLo + 1);
     }
 
-    // Missions 21 to 100
-    int mapIdx = (missionNumber * 7) % 30;
-    std::vector<TankType> enemies;
-
-    int tier = (missionNumber - 21) / 10;
-    int enemyCount = std::min(8, 3 + (missionNumber / 18));
-
-    for (int i = 0; i < enemyCount; ++i) {
-        if (missionNumber == 100) {
-            enemies = { 
-                TankType::EnemyBlack, TankType::EnemyBlack, 
-                TankType::EnemyWhite, TankType::EnemyWhite, 
-                TankType::EnemyPurple, TankType::EnemyPurple, 
-                TankType::EnemyGreen, TankType::EnemyGreen 
-            };
-            break;
-        }
-
-        if (missionNumber % 10 == 0 && i == 0) {
-            enemies.push_back(TankType::EnemyBlack);
-            continue;
-        }
-
-        int randChoice = (missionNumber * 7 + i * 13) % 100;
-        if (tier >= 5 && randChoice > 75) {
-            enemies.push_back(TankType::EnemyWhite);
-        } else if (tier >= 4 && randChoice > 55) {
-            enemies.push_back(TankType::EnemyPurple);
-        } else if (tier >= 3 && randChoice > 40) {
-            enemies.push_back(TankType::EnemyGreen);
-        } else if (tier >= 2 && randChoice > 25) {
-            enemies.push_back(TankType::EnemyRed);
-        } else if (tier >= 1 && randChoice > 15) {
-            enemies.push_back(TankType::EnemyYellow);
-        } else {
-            enemies.push_back(TankType::EnemyTeal);
-        }
+    std::vector<EnemySlotDef> enemies;
+    for (int i = 0; i < 8; ++i) {
+        int v = row.slot[i];
+        if (v == 0) continue; // 0x80265cc0: a zero slot is empty
+        // 0x80265cc4: below 10 the value is the record type itself; at or above
+        // 10 it is a lo/hi pair of digits and the type is drawn between them.
+        int type = v < 10 ? v : (v / 10) + rand() % (v % 10 - v / 10 + 1);
+        enemies.push_back({ i, kRecordType[type] });
     }
 
-    return { mapIdx, enemies };
+    return { mapIndex, row.bonus != 0, enemies };
 }
 
 bool Level::LoadMission(int missionNumber, bool is2Player) {
     m_currentMission = missionNumber;
-    MissionDef def = GetMissionDef(missionNumber);
+    m_currentDef = GetMissionDef(missionNumber);
+    const MissionDef& def = m_currentDef;
 
     std::string prefix = is2Player ? "TnkMapData_P2_" : "TnkMapData_P1_";
     
@@ -134,7 +77,7 @@ bool Level::LoadMission(int missionNumber, bool is2Player) {
     return LoadFromBinary(ssFallback.str(), def.enemies);
 }
 
-bool Level::LoadFromBinary(const std::string& filepath, const std::vector<TankType>& missionEnemies) {
+bool Level::LoadFromBinary(const std::string& filepath, const std::vector<EnemySlotDef>& missionEnemies) {
     std::ifstream file(filepath, std::ios::binary);
     if (!file.is_open()) {
         std::cerr << "Failed to open map file: " << filepath << std::endl;
@@ -192,39 +135,14 @@ bool Level::LoadFromBinary(const std::string& filepath, const std::vector<TankTy
         }
     }
 
-    // Match exact spawn positions based on spawn codes
-    std::vector<bool> usedSpawns(potentialSpawns.size(), false);
-
-    for (size_t i = 0; i < missionEnemies.size(); ++i) {
-        TankType eType = missionEnemies[i];
-        uint32_t targetCode = 400 + static_cast<uint32_t>(eType) - 4; // match enemy type to spawn marker if available
-        if (targetCode < 400 || targetCode > 408) targetCode = 400;
-
-        int chosenIdx = -1;
-        for (size_t s = 0; s < potentialSpawns.size(); ++s) {
-            if (!usedSpawns[s] && potentialSpawns[s].spawnCode == targetCode) {
-                chosenIdx = int(s);
-                break;
-            }
-        }
-
-        if (chosenIdx == -1) {
-            for (size_t s = 0; s < potentialSpawns.size(); ++s) {
-                if (!usedSpawns[s]) {
-                    chosenIdx = int(s);
-                    break;
-                }
-            }
-        }
-
-        if (chosenIdx != -1) {
-            usedSpawns[chosenIdx] = true;
-            m_enemySpawns.push_back({ 
-                eType, 
-                potentialSpawns[chosenIdx].worldPos, 
-                potentialSpawns[chosenIdx].gridX, 
-                potentialSpawns[chosenIdx].gridY 
-            });
+    // Slot index i is spawn marker 400 + i; every map file carries all eight
+    // exactly once, so each enemy lands on the tile its row selected.
+    for (const EnemySlotDef& e : missionEnemies) {
+        uint32_t targetCode = 400 + static_cast<uint32_t>(e.slot);
+        for (const PotentialSpawn& s : potentialSpawns) {
+            if (s.spawnCode != targetCode) continue;
+            m_enemySpawns.push_back({ e.type, s.worldPos, s.gridX, s.gridY });
+            break;
         }
     }
 

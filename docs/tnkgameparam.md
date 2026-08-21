@@ -163,3 +163,67 @@ jamais dans l'objet AI.
 Cette table reproduit sans y toucher les neuf lignes qui avaient été vérifiées à
 la main une par une (champs 3, 4, 5, 6, 7, 28, 34, 35, 39). C'est une confirmation
 indépendante : elle sort du binaire, pas d'un rapport.
+
+## La table des missions (offset 1684)
+
+Les 8800 octets qui suivent les dix records sont la table des missions : **100
+lignes de 88 octets**, 22 mots big-endian chacune. `4 + 10*168 + 100*88 = 10484`,
+la taille exacte du fichier.
+
+Adresses qui l'épinglent dans main.dol :
+
+| VMA | Ce qu'il lit |
+|-----|--------------|
+| `0x80265bdc` | `mulli 3,28,88` puis `addi 4,r3,1680` et `lwz 3,4(4)` / `lwzu 0,8(4)` × 11 — base 1684 (l'idiome pré-biaise de −4), pas 88, 22 mots recopiés sur la pile |
+| `0x80264bd4` | `mulli 0,0,88` / `lwz 4,1684(4)` — mot 0 |
+| `0x80264bec` | `mulli 0,0,88` / `lwz 4,1688(4)` — mot 1 |
+| `0x80265444` | `lwz 0,1756(4)` + `lwz 7,1760(4)` — mots 18 et 19 |
+| `0x8026545c` | `lwz 0,1764(4)` + `lwz 7,1768(4)` — mots 20 et 21 |
+| `0x80265c10`..`0x80265c4c` | charge les mots 2 à 17 dans seize registres |
+| `0x80265c50` | `bt CR0[EQ]` garde soit les mots 10–17, soit les mots 2–9 : deux colonnes de huit slots |
+| `0x80265cb8` | la boucle sur les slots |
+
+Disposition d'une ligne :
+
+| Mots | Rôle |
+|------|------|
+| 0, 1 | drapeau, colonne A puis B. Le mot 0 vaut 1 aux missions 5, 10, … 95 ; le mot 1 vaut 0 partout |
+| 2–9 | huit slots d'ennemis, colonne A |
+| 10–17 | huit slots d'ennemis, colonne B |
+| 18, 19 | bornes `lo`/`hi` de l'indice de carte, colonne A |
+| 20, 21 | bornes `lo`/`hi`, colonne B |
+
+**Choix de la carte** (`0x80265470`) : `cmpw` entre les deux bornes ; égales, la
+valeur sert telle quelle, sinon le LCG `[r13-25800]` XOR le LFSR `[r13-25796]`
+tire dans `[lo, hi]` — `0x802654b0` calcule `hi - lo + 1`. Les bornes A et B sont
+identiques sur les 100 lignes.
+
+**Encodage d'un slot** (`0x80265cb8`) :
+
+- `0` : slot vide (`cmpwi 5,0` puis `bf CR0[GT]`).
+- `< 10` : l'indice de type du record, tel quel (`cmpwi 5,10` puis `bf CR0[LT]`).
+- `>= 10` : deux chiffres, `lo = v/10` et `hi = v%10`, et le type est tiré
+  uniformément dans `[lo, hi]`. La division par 10 est la magie `0x66666667`
+  suivie de `mulhw` et `srawi 2` ; `sub 4,5,6` donne le reste, `divwu`/`mullw`
+  le modulo. Les 1600 slots du fichier respectent tous `1 <= lo < hi <= 9`.
+
+**L'indice de slot est le marqueur de spawn.** Chaque fichier de carte porte les
+codes de tuile 400 à 407, une fois chacun ; le slot `i` place son char sur le
+code `400 + i`. C'est la moitié qui manquait quand on avait conclu que ces tuiles
+étaient « des emplacements, pas des types » : elles sont bien des emplacements,
+et c'est la table qui dit quoi mettre dedans.
+
+Les colonnes A et B ne diffèrent que sur 14 lignes, et toujours par une
+permutation des mêmes types entre slots : la composition d'une mission ne dépend
+pas de la colonne, seulement le placement.
+
+Les missions 1 à 20 ont des bornes de carte fixes et des types littéraux. À
+partir de la 21, seules les missions multiples de 10 sont écrites à la main ; les
+autres sont des lignes à intervalles, réutilisées telles quelles sur des blocs de
+neuf missions.
+
+Séquence mission → carte des vingt premières : 29, 0, 1, 27, 26, 9, 2, 10, 3, 11,
+4, 12, 5, 13, 6, 7, 14, 15, 8, 28.
+
+`tools/mission_table.py` régénère `src/MissionTable.inc` à partir du binaire et
+vérifie ces invariants au passage.

@@ -1,131 +1,82 @@
-import struct
-import sys
-import os
+#!/usr/bin/env python3
+"""Emit src/MissionTable.inc from assets/param/TnkGameParam.bin.
 
-def parse_game_param(filepath):
-    with open(filepath, 'rb') as f:
-        data = f.read()
-    
-    words = struct.unpack(f'>{len(data)//4}I', data)
-    missions = []
-    for i in range(100):
-        start = 421 + i * 22
-        end = start + 22
-        missions.append(words[start:end])
-        
-    return missions
+The mission table lives at offset 1684 in TnkGameParam.bin: 100 rows of 88
+bytes, 22 big-endian u32 each.  Every field below is pinned to the code in
+main.dol that reads it:
 
-def parse_map_file(filepath):
-    with open(filepath, 'rb') as f:
-        data = f.read()
-    
-    header = struct.unpack('>4I', data[:16])
-    width, height = header[0], header[1]
-    
-    tiles = struct.unpack(f'>{width*height}I', data[16:])
-    
-    enemy_counts = [0] * 9
-    for tile in tiles:
-        if 400 <= tile <= 408:
-            enemy_counts[tile - 400] += 1
-            
-    return enemy_counts
+  0x80265bdc  mulli 3,28,88 / addi 4,r,1680 / lwz 3,4(4) + lwzu 0,8(4) x11
+              -> base 1684, stride 88, row = 22 words (the +1680 base with the
+                 pre-biased lwz/lwzu idiom starts the copy at +1684).
+  0x80264bd4  mulli 0,0,88 / lwz 4,1684(4)   -> word 0   (column A flag)
+  0x80264bec  mulli 0,0,88 / lwz 4,1688(4)   -> word 1   (column B flag)
+  0x80265444  mulli 0,4,88 / lwz 0,1756(4) + lwz 7,1760(4)  -> words 18,19
+  0x8026545c  mulli 0,4,88 / lwz 0,1764(4) + lwz 7,1768(4)  -> words 20,21
+              0x80265470 cmpw 0,7 -> equal means "use it", otherwise the LCG at
+              [r13-25800] xor the LFSR at [r13-25796] picks in [lo,hi]
+              (0x802654b0 sub 7,7,0 / addi 8,7,1 = hi-lo+1).
+  0x80265c10..0x80265c4c load words 2..17 into 16 registers; 0x80265c50 keeps
+              either words 10..17 or words 2..9, i.e. two 8-slot columns.
+  0x80265cb8  the slot loop: value 0 is an empty slot (bf CR0[GT] skips), a
+              value < 10 is used literally (0x80265cc4 cmpwi 10 / bf CR0[LT]),
+              and a value >= 10 is a range: 0x66666667 mulhw + srawi 2 gives
+              lo = v/10, sub 4,5,6 gives hi = v%10, and divwu/mullw takes the
+              RNG modulo hi-lo+1.
 
-def analyze_columns(missions):
-    print("=== Column Analysis ===")
-    for col in range(22):
-        values = [m[col] for m in missions]
-        min_val = min(values)
-        max_val = max(values)
-        distinct = len(set(values))
-        is_monotonic_inc = all(values[i] <= values[i+1] for i in range(len(values)-1))
-        is_monotonic_dec = all(values[i] >= values[i+1] for i in range(len(values)-1))
-        
-        corr_inc = "inc" if is_monotonic_inc else "dec" if is_monotonic_dec else "no"
-        print(f"Col {col:2}: range {min_val:4}..{max_val:4}, {distinct:3} distinct, monotonic={corr_inc}")
-    print()
+Slot index i is the spawn marker: every map file carries tile codes 400..407
+exactly once, one per slot.
+"""
+import struct, sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+BIN = ROOT / "assets/param/TnkGameParam.bin"
+OUT = ROOT / "src/MissionTable.inc"
+
+TABLE_OFF, ROWS, STRIDE = 1684, 100, 88
+
+# TnkGameParam record order, proven by the 168-byte record stride and the mine
+# fields (3/4/6/7 are non-zero for exactly 0, 5, 6, 8, 9).  Our TankType enum
+# reserves four player slots first and swaps Red/Yellow and Purple/Green, so the
+# record index cannot be used as an enum offset.
+ENUM = {
+    1: "TankType::EnemyBrown", 2: "TankType::EnemyAsh",   3: "TankType::EnemyTeal",
+    4: "TankType::EnemyRed",   5: "TankType::EnemyYellow", 6: "TankType::EnemyPurple",
+    7: "TankType::EnemyGreen", 8: "TankType::EnemyWhite",  9: "TankType::EnemyBlack",
+}
+
 
 def main():
-    if len(sys.argv) < 3:
-        print("Usage: python tools/mission_table.py <param.bin> <map_dir>")
-        return
-        
-    param_path = sys.argv[1]
-    map_dir = sys.argv[2]
-    
-    missions = parse_game_param(param_path)
-    
-    print("=== First 5 missions ===")
-    for i in range(5):
-        print(missions[i])
-    print()
-    
-    analyze_columns(missions)
-    
-    # Check map capacities
-    map_counts = {}
-    for p in [1, 2]:
-        for i in range(30):
-            for layout in [0, 1]:
-                filepath = os.path.join(map_dir, f'TnkMapData_P{p}_{i:02d}_{layout}.bin')
-                if os.path.exists(filepath):
-                    map_counts[(p, i, layout)] = parse_map_file(filepath)
-    
-    # Are all maps exactly [1,1,1,1,1,1,1,1,0]?
-    all_same = True
-    for k, counts in map_counts.items():
-        if counts != [1,1,1,1,1,1,1,1,0]:
-            all_same = False
-            # print(f"Map {k} has different counts: {counts}")
-    print(f"All 120 maps have exactly [1,1,1,1,1,1,1,1,0] spawn points: {all_same}")
-    
-    # Test hypothesis
-    # If a group of 8 is per-enemy-type counts then:
-    # 1. their sum should be that mission's total enemy count
-    # 2. that sum should grow roughly with mission number
-    # 3. no per-type count should exceed what the corresponding map can actually spawn
-    
-    print("=== Hypothesis Test ===")
-    matches = 0
-    refuted = 0
-    
-    for i, m in enumerate(missions):
-        p = m[0] + 1
-        map_idx = m[18]
-        g1 = m[2:10]
-        g2 = m[10:18]
-        
-        m0_caps = map_counts.get((p, map_idx, 0), [0]*9)
-        m1_caps = map_counts.get((p, map_idx, 1), [0]*9)
-        
-        valid = True
-        for t in range(8):
-            if g1[t] > m0_caps[t] or g2[t] > m1_caps[t]:
-                valid = False
-                break
-                
-        if valid:
-            matches += 1
-        else:
-            refuted += 1
-            
-        if i == 1:
-            print(f"Mission {i}: map P{p}_{map_idx:02d}, Brown requested g1={g1[0]}, g2={g2[0]}. Map caps: m0={m0_caps[0]}, m1={m1_caps[0]}")
-        if i == 4:
-            print(f"Mission {i}: map P{p}_{map_idx:02d}, Ash requested g1={g1[1]}, g2={g2[1]}. Map caps: m0={m0_caps[1]}, m1={m1_caps[1]}")
-            
-    print(f"Match rate: {matches} of 100 missions match exactly.")
-    
-    # Check sum growth
-    sums_g1 = [sum(m[2:10]) for m in missions]
-    print(f"First 10 g1 sums: {sums_g1[:10]}")
-    print(f"Last 10 g1 sums: {sums_g1[-10:]}")
-    
-    # Full dump
-    print("\n=== Full Dump ===")
-    for i, m in enumerate(missions):
-        if i < 5:  # Keep output small, user wants first 5 only in reply
-            print(f"M{i:02d}: {m}")
+    d = BIN.read_bytes()
+    end = TABLE_OFF + ROWS * STRIDE
+    assert end == len(d), "table does not end at EOF: %d vs %d" % (end, len(d))
+    w = struct.unpack(">%dI" % (ROWS * 22), d[TABLE_OFF:end])
 
-if __name__ == '__main__':
-    main()
+    lines = []
+    for r in range(ROWS):
+        row = w[r * 22:(r + 1) * 22]
+        bonus, lo, hi = row[0], row[18], row[19]
+        slots = row[2:10]
+        assert row[1] == 0, "row %d column B flag is not 0" % r
+        assert (row[18], row[19]) == (row[20], row[21]), "row %d map columns differ" % r
+        assert sorted(slots) == sorted(row[10:18]), "row %d rosters are not a permutation" % r
+        for v in slots:
+            assert v < 10 or (1 <= v // 10 < v % 10 <= 9), "row %d bad slot %d" % (r, v)
+        lines.append("    { %d, %2d, %2d, { %s } },  // mission %d" % (
+            bonus, lo, hi, ", ".join("%2d" % v for v in slots), r + 1))
+
+    OUT.write_text(
+        "// Generated by tools/mission_table.py from assets/param/TnkGameParam.bin.\n"
+        "// Do not edit by hand.  See that script for the main.dol addresses that\n"
+        "// pin the table offset (1684), the 88-byte stride and every field below.\n"
+        "// slot: 0 = empty, 1..9 = record tank type, >= 10 = random type in\n"
+        "// [v/10, v%10] inclusive.  Slot index i is map tile code 400+i.\n"
+        "static const MissionRow kMissionTable[100] = {\n" + "\n".join(lines) + "\n};\n"
+        "\n// Record tank type -> our TankType enum (the enum is not in record order).\n"
+        "static const TankType kRecordType[10] = {\n"
+        "    TankType::Player1,  // 0 is the player record, never a spawn slot\n"
+        + "".join("    %s,\n" % ENUM[i] for i in range(1, 10)) + "};\n")
+    print("wrote", OUT, ROWS, "rows")
+
+
+main()
