@@ -477,3 +477,38 @@ deuxième moitié de son imprécision, l'autre étant les 60 frames de visée fi
 du champ 39 : le canon n'a simplement pas le temps de suivre.
 
 Le record du joueur porte le champ lui aussi, à 0.05.
+
+## Le tir n'est gardé par aucun test de mur (0x8026c280..0x8026c5a8)
+
+Le contrôleur d'IA a été lu en entier. La détente est un simple compteur :
+
+| Adresse | Ce qu'elle fait |
+|---|---|
+| `0x8026c3a0` | recharge `[A+0x74]` depuis `[A+0x40]` et `[A+0x78]` depuis `[A+0x48]` |
+| `0x8026c3cc` | tire le délai `[A+0x110]` dans le LCG `[r13-25800]` xor le LFSR `[r13-25796]` |
+| `0x8026c534` | décrémente `[A+0x74]`, borné à 0 |
+| `0x8026c548` | `lwz 0,120(30)` puis `cmpwi 0,0` et `bf CR0[GT]` vers `0x8026c578` — pas de `cror` devant, donc la chute est `[A+0x78] > 0` |
+| `0x8026c564` | `bl 0x80268d04`, qui ne fait que basculer le bit 4 de `[r3+0x10]` : c'est l'entrée « bouton tir », pas le spawn de l'obus |
+| `0x8026c568` | décrémente `[A+0x78]` |
+
+Rien sur ce chemin n'interroge le terrain. Le pointeur du gestionnaire de blocs
+`[r13-25032]` n'apparaît qu'une fois dans tout le contrôleur, en `0x8026c61c`,
+dans la routine de mine. Les deux aides de visée `0x802639b4` et `0x80263ba4`
+passent par `[r13-25016]`, et la routine de mine indexe ce même pointeur en
+`[[r13-25016]+8] + (index+2)*4` : c'est la table des entités, pas la géométrie.
+La valeur de retour de l'aide de visée est morte — `0x8026c4f8` recharge `r3`
+juste après l'appel.
+
+Conclusion : le jeu d'origine tire au rythme du compteur, mur ou pas, et son
+propre ricochet peut lui revenir dessus.
+
+Le drapeau `[A+0x114]` sélectionne laquelle des deux aides de visée tourne
+(`lbz` en `0x8026c330`, `bt CR0[EQ]` vers `0x8026c42c`). Il est mis à 1 en
+`0x8026c714` en queue de la routine de mine, quand `0x80269288` rend non nul, et
+remis à 0 en `0x8026c5c4` et `0x8026bee4`.
+
+**Ce que fait notre code à la place.** `AIManager::ShotIsClear` (src/AI.cpp)
+refuse la détente tant que le canon lui-même ne tient pas la solution. C'est une
+divergence assumée, pas une extraction : notre tourelle pivote lentement
+(`turretSlewTan`) alors que la décision de tir se prenait sur la solution visée,
+si bien que le char tirait dans le mur d'à côté puis se prenait le retour.

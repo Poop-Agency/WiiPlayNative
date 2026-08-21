@@ -29,9 +29,25 @@ static float RayHitsDisc(Vector2 a, Vector2 d, float len, Vector2 p, float r) {
     return (t <= len) ? t : -1.0f;
 }
 
-// OURS. The original's own fire gate has not been read out of main.dol yet.
+// OURS, AND A DELIBERATE DIVERGENCE. The original has no such gate.
 //
-// What this fixes is a bug we introduced. FindDirectShot and FindBankShot decide
+// The whole AI controller is 0x8026c280..0x8026c5a8 and it was read end to end.
+// The trigger is a plain countdown: 0x8026c3a0 reloads [A+0x74] from [A+0x40]
+// and [A+0x78] from [A+0x48], 0x8026c548 tests [A+0x78] with `cmpwi 0,0` and a
+// `bf CR0[GT]` to 0x8026c578 (no cror in front of it), and the fall-through
+// presses the fire input at 0x8026c564 (bl 0x80268d04, which only toggles bit 4
+// of [r3+0x10]) and decrements the counter at 0x8026c568.
+//
+// Nothing on that path asks the level anything. The block manager pointer
+// [r13-25032] appears exactly once in the whole controller, at 0x8026c61c,
+// inside the mine callee. The two aim helpers 0x802639b4 and 0x80263ba4 go
+// through [r13-25016], and the mine code indexes that same pointer as
+// [[r13-25016]+8] + (index+2)*4, so it is the entity table, not geometry. The
+// aim helper's return value is dead: 0x8026c4f8 reloads r3 immediately after the
+// call. So the original fires on a timer whether or not a wall is in the way,
+// and its own ricochet can come home.
+//
+// We keep the gate anyway, because what it fixes is a bug we introduced. FindDirectShot and FindBankShot decide
 // where the tank WANTS to point, but the shell leaves along the turret angle,
 // and since the turret was made to slew (turretSlewTan) the barrel spends whole
 // seconds pointing somewhere else. The tank was firing on the strength of a
