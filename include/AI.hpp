@@ -31,6 +31,10 @@ public:
     void Update(float dt, std::vector<Tank>& tanks, Level& level, 
                 const BulletManager& bullets, MineManager& mines);
 
+    // Trace the shot the barrel would actually fire right now, bounces and all.
+    // Public so tools/test_shotgate.cpp can drive it directly.
+    bool ShotIsClear(const Tank& enemy, Vector2 targetPos, const Level& level);
+
 private:
     void UpdateEnemy(Tank& enemy, AIState& state, float dt, 
                      const std::vector<Tank>& tanks, Level& level, 

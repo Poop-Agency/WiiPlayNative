@@ -15,6 +15,64 @@ void AIManager::Reset() {
     m_states.clear();
 }
 
+// Distance along the ray a..a+d*len at which it first enters the disc of radius
+// r around p, or -1 if it never does.
+static float RayHitsDisc(Vector2 a, Vector2 d, float len, Vector2 p, float r) {
+    Vector2 m = { a.x - p.x, a.y - p.y };
+    float b = m.x * d.x + m.y * d.y;
+    float c = m.x * m.x + m.y * m.y - r * r;
+    if (c > 0.0f && b > 0.0f) return -1.0f;      // outside the disc, pointing away
+    float disc = b * b - c;
+    if (disc < 0.0f) return -1.0f;
+    float t = -b - std::sqrt(disc);
+    if (t < 0.0f) t = 0.0f;
+    return (t <= len) ? t : -1.0f;
+}
+
+// OURS. The original's own fire gate has not been read out of main.dol yet.
+//
+// What this fixes is a bug we introduced. FindDirectShot and FindBankShot decide
+// where the tank WANTS to point, but the shell leaves along the turret angle,
+// and since the turret was made to slew (turretSlewTan) the barrel spends whole
+// seconds pointing somewhere else. The tank was firing on the strength of a
+// solution its barrel had not reached yet: into the wall beside it, and then
+// into itself when the shell came back.
+//
+// So gate the trigger on the shot that would actually leave the muzzle: walk it
+// from the barrel tip, reflect it maxBounces times the way Bullet does, and fire
+// only if it reaches the target before it reaches the shooter. Self is not
+// tested on the outgoing leg -- the shell starts inside the hull there.
+bool AIManager::ShotIsClear(const Tank& enemy, Vector2 targetPos, const Level& level) {
+    Vector2 me = enemy.GetPosition();
+    float a = enemy.GetTurretAngle();
+    Vector2 dir = { std::cos(a), std::sin(a) };
+    Vector2 pos = enemy.GetBarrelTip();
+
+    const float SEG = 60.0f;   // longer than the arena diagonal
+    int maxBounces = enemy.GetConfig().maxBounces;
+
+    for (int bounce = 0; bounce <= maxBounces; ++bounce) {
+        Vector2 hitPoint, hitNormal;
+        int hitTileX, hitTileY;
+        bool hit = level.Raycast(pos, dir, SEG, hitPoint, hitNormal, hitTileX, hitTileY, true);
+        float segLen = hit ? Vector2Distance(pos, hitPoint) : SEG;
+
+        float tTarget = RayHitsDisc(pos, dir, segLen, targetPos, TANK_RADIUS * 1.5f);
+        float tSelf = (bounce == 0) ? -1.0f
+                                    : RayHitsDisc(pos, dir, segLen, me, TANK_RADIUS);
+
+        if (tTarget >= 0.0f && (tSelf < 0.0f || tTarget <= tSelf)) return true;
+        if (tSelf >= 0.0f) return false;   // the shell comes home first
+        if (!hit) return false;            // ran off into the arena wall gap
+
+        float dot = dir.x * hitNormal.x + dir.y * hitNormal.y;
+        dir.x -= 2.0f * dot * hitNormal.x;
+        dir.y -= 2.0f * dot * hitNormal.y;
+        pos = { hitPoint.x + hitNormal.x * 0.05f, hitPoint.y + hitNormal.y * 0.05f };
+    }
+    return false;
+}
+
 bool AIManager::FindDirectShot(const Tank& enemy, Vector2 targetPos, const Level& level, Vector2& outAimPos) {
     Vector2 myPos = enemy.GetPosition();
     Vector2 dir = { targetPos.x - myPos.x, targetPos.y - myPos.y };
@@ -246,7 +304,9 @@ void AIManager::UpdateEnemy(Tank& enemy, AIState& state, float dt,
     }
     if (state.hasAim) enemy.aimTarget = state.heldAim;
 
-    if (canShoot && state.shootTimer <= 0.0f) {
+    // The barrel has the last word: canShoot only says a solution exists, and the
+    // turret may still be swinging toward it. See ShotIsClear.
+    if (canShoot && state.shootTimer <= 0.0f && ShotIsClear(enemy, predictedPlayerPos, level)) {
         enemy.shootRequested = true;
 
         // Cooldowns come from TnkGameParam.bin (col 37, frames at 60 Hz), with a small
