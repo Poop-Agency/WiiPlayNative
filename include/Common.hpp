@@ -69,10 +69,15 @@ static_assert(MINE_LIFETIME == 10.0f, "mine must live 480 + 120 frames at 60 Hz"
 // Game tiles and IDs matching original Nintendo data
 enum class TileType : uint32_t {
     Empty = 0,
-    // Two block families, both solid. 101..107 are the cork blocks a mine blast
-    // breaks; 200..207 never break. The low nibble of the builder's packed
-    // argument carries the family and the high nibble the block height 1..8,
-    // which is why the models are named tnk_block_1 / _7 / _8.
+    // Two block families.  The field builder at 0x80265e68 accepts exactly two
+    // tile ranges and packs each one as (index << 4) | family: 0x80265f38 does
+    // `addi 0,3,-100; slwi 5,0,4` for 100..107 (family bit clear) and 0x80265ff0
+    // does `addi 0,3,-200; slwi 0,0,4; ori 5,0,1` for 200..207 (family bit set).
+    // So the high nibble is an index 0..7, not a height 1..8 -- an earlier note
+    // here said 1..8 and was wrong.  Both families end on the same virtual call
+    // (vtable+0x4C on the block manager at [r13-25032]).
+    //
+    // 101..107 are the cork blocks a mine blast breaks; 201..207 never break.
     CorkBlock = 101,
     CorkBlock2 = 102,
     CorkBlock3 = 103,
@@ -80,7 +85,16 @@ enum class TileType : uint32_t {
     CorkBlock5 = 105,
     CorkBlock6 = 106,
     CorkBlock7 = 107,
-    SolidBlock = 200,
+    // Index 0 exists only in the 200 family: tile 100 appears in no map, 200 in
+    // twelve of them, and map 27 (mission 4) is made of nothing else.
+    //
+    // PARTLY OURS.  The tile id and the (index << 4) | family packing above come
+    // straight out of the binary.  That index 0 of that family is a HOLE and not
+    // a block does not: it rests on assets/ripped/tnk_block/hole.png and
+    // floor_lower.png existing at all, on map 27 being 100% tile 200, and on the
+    // player reporting mission 4 as a field of holes.  The virtual call that
+    // would settle it forwards through a pool allocator we did not follow.
+    Hole = 200,
     SolidBlock1 = 201,
     SolidBlock2 = 202,
     SolidBlock3 = 203,

@@ -156,7 +156,7 @@ bool Level::IsInBounds(int gx, int gy) const {
 }
 
 TileType Level::GetTile(int gx, int gy) const {
-    if (!IsInBounds(gx, gy)) return TileType::SolidBlock;
+    if (!IsInBounds(gx, gy)) return TileType::SolidBlock1;
     return m_grid[gy * m_width + gx];
 }
 
@@ -173,10 +173,15 @@ bool Level::IsSolid(int gx, int gy) const {
 }
 
 bool Level::IsHole(int gx, int gy) const {
-    // Tanks has no hole tile. The field builder at 0x80265e68 accepts exactly two
-    // tile ranges, 100..107 and 200..207, and hands both to the same block create
-    // call; every other value is skipped. So both families are solid obstacles.
-    return false;
+    // A note here used to say Tanks has no hole tile, on the grounds that the
+    // builder hands both families to the same create call. It does not: 100..107
+    // goes through 0x80265f38 and 200..207 through 0x80265ff0, and the two pack
+    // different arguments -- (v-100)<<4 against ((v-200)<<4)|1. See TileType.
+    //
+    // Tile 200 is index 0 of the second family and is the hole. Out of bounds is
+    // the arena wall, which is solid, so it is never a hole.
+    if (!IsInBounds(gx, gy)) return false;
+    return m_grid[gy * m_width + gx] == TileType::Hole;
 }
 
 bool Level::IsDestructible(int gx, int gy) const {
@@ -343,7 +348,10 @@ bool Level::Raycast(Vector2 start, Vector2 dir, float maxDist,
 
         if (t >= maxDist || t >= tBound) break;
 
-        if (IsSolid(gx, gy)) {
+        // A hole stops a tank but not a shell: the shell flies over it. That is
+        // what ignoreHoles selects, and until now the flag was accepted and
+        // dropped on the floor, so shells bounced off open pits.
+        if (IsSolid(gx, gy) && !(ignoreHoles && IsHole(gx, gy))) {
             outHitPoint = { start.x + rayDir.x * t, start.y + rayDir.y * t };
             outNormal = hitNormal;
             outTileX = gx;

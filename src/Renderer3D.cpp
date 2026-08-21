@@ -200,7 +200,20 @@ void Renderer3D::DrawBlocks(const Level& level) {
 
             Vector2 pos = level.GridToWorld(x, y);
 
-            if (level.IsDestructible(x, y)) {
+            if (level.IsHole(x, y)) {
+                // Tile 200 is a pit, not a block. Sunk floor first, then the
+                // game's own hole ring laid just over the table so the rim reads
+                // from a low camera. See TileType::Hole for what is and is not
+                // pinned to the binary here.
+                DrawTexCube({ pos.x, -0.6f, pos.y },
+                            { CELL_SIZE, 1.2f, CELL_SIZE },
+                            "tnk_block/floor_lower",
+                            Tex("tnk_block/floor_lower") ? WHITE : Color{ 60, 45, 30, 255 });
+                DrawTexCube({ pos.x, 0.02f, pos.y },
+                            { CELL_SIZE, 0.02f, CELL_SIZE },
+                            "tnk_block/hole",
+                            Tex("tnk_block/hole") ? WHITE : Color{ 30, 22, 15, 255 });
+            } else if (level.IsDestructible(x, y)) {
                 // Breakable cork block. block_harf is the game's own half-height
                 // block skin; the flat colour stays as the fallback.
                 DrawTexCube({ pos.x, 0.65f, pos.y },
