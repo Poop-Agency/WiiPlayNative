@@ -227,3 +227,50 @@ Séquence mission → carte des vingt premières : 29, 0, 1, 27, 26, 9, 2, 10, 3
 
 `tools/mission_table.py` régénère `src/MissionTable.inc` à partir du binaire et
 vérifie ces invariants au passage.
+
+## Le bloc mouvement (champs 10..27) et son objet
+
+Le constructeur d'IA `0x8026bfd4` ne copie que 23 champs (1..9 et 28..41). Les
+champs 10..27 partent ailleurs : `0x80269d84..0x8026a00c`, dont le `mulli
+r4,r4,168` est en `0x80269dec`. Même idiome de copie pré-biaisé de -4, donc le
+champ k atterrit en `r1 + 8 + 4k`.
+
+Base de destination `r3`, que j'appelle M ci-dessous. Les paramètres tiennent
+dans `M+0x04..M+0x40` ; l'objet fait au moins 512 octets, l'état vient après.
+
+| fld | -> M | type | load | store | valeurs |
+|-----|------|------|------|-------|---------|
+| 10 | 0x04 | float | 80269e40 | 80269f68 | 0.3 (Brown/Green 0) |
+| 11 | 0x08 | float | 80269e44 | 80269f6c | 0.6 (Brown/Green 0) |
+| 22 | 0x0C | float | 80269e70 | 80269f70 | vitesse max, px/frame |
+| 26 | 0x10 | float | 80269e80 | 80269f74 | 10, Black 5 |
+| 25 | 0x14 | float | 80269e7c | 80269f78 | 0.08, Teal 0.2, Black 0.06 |
+| 12 | 0x18 | float | 80269e48 | 80269f7c | 30 (Brown/Green 0) |
+| 20 | 0x1C | float | 80269e68 | 80269f80 | signé, Teal seul négatif |
+| 14 | 0x20 | int | 80269e50 | 80269f84 | 5, Ash/Yellow 10 |
+| 13 | 0x24 | int | 80269e4c | 80269f88 | 10, Ash/Yellow 15 |
+| 27 | 0x28 | int | 80269e84 | 80269f8c | 50 ou 30 |
+| 16 | 0x2C | float | 80269e58 | 80269f90 | 120 (Brown/Green 0) |
+| 18 | 0x30 | float | 80269e60 | 80269f94 | 60 / 40 / Black 100 |
+| 15 | 0x34 | float | 80269e54 | 80269f98 | 120, Yellow 130 |
+| 17 | 0x38 | float | 80269e5c | 80269f9c | 120 / 160 / 0 |
+| 19 | 0x3C | int | 80269e64 | 80269fa0 | 1, sauf Red/Black/Brown/Green 0 |
+| 21 | 0x40 | int | 80269e6c | 80269fa4 | 4 partout |
+
+Les champs 23 (0.12) et 24 (0.85) sont chargés en `0x80269e74` et `0x80269e78`
+mais ne sont jamais rangés dans M : ils ne partent que dans le second épandage
+de pile en `0x80269f1c` / `0x80269f20`. Consommateur inconnu.
+
+### 13 et 14 sont la cadence de décision de déplacement
+
+`0x80269910..0x80269bac` est le tick de mouvement. Il décrémente `[M+0x1FC]`
+(`lwz 7,508(3)` en `0x80269940`, `addic. 0,7,-1`, `stw` en `0x80269954`) et le
+`bt CR0[GT]` en `0x80269958` saute par-dessus tout le corps tant que le compteur
+reste positif. À l'expiration, le corps tourne puis retire le compteur en
+`0x80269b6c..0x80269b80` : `[M+0x20]` sert de min, `[M+0x24]` de max, et le tirage
+est `min + rand % (max - min)` avec le même LCG `[r13-25800]` xor LFSR
+`[r13-25796]` que la cadence de tir.
+
+Donc une décision toutes les 5 à 10 frames pour la plupart des chars, 10 à 15
+pour Ash et Yellow. C'est court : c'est un pas de pilotage, pas un choix de
+destination. Ce que fait le corps `0x8026995c..0x80269b10` reste à lire.
