@@ -610,3 +610,60 @@ Donc l'état 2 est l'esquive : le char part le long de la somme des vecteurs
 d'évitement et y reste tant qu'une entrée du tableau B est sous 16. L'unité de ce
 16 n'est pas encore fixée — 16 px est un demi-bloc, mais ça peut aussi être un
 compte à rebours en frames.
+
+### Les deux collecteurs : obus et mines
+
+`0x802699e0` appelle `0x80262134..0x80262498` avec `r3 = [r13-25024]`, `r4 = M`.
+`0x80269a4c` appelle `0x802666b4..0x80266938` avec `r3 = [r13-24992]`, `r4 = M`.
+
+Les deux gestionnaires sont des objets de 64 octets construits par `operator new`
+en `0x800a39f8` : `[r13-25024]` en `0x802628e0`, vtable `0x80375BE0`, rangé en
+`0x80262910` ; `[r13-24992]` en `0x80266cb0`, vtable `0x80375E18`, rangé en
+`0x80266cdc`.
+
+`[r13-24992]` est le gestionnaire de **mines** : le code de bloc l'interroge en
+`0x80260b58`, dans la branche de proximité de mine déjà identifiée en
+`0x80260b38`. `[r13-25024]` est donc celui des **obus**, ce que confirme la forme
+des entrées : celles du tableau A portent une vitesse, celles du tableau B non, et
+une mine ne bouge pas.
+
+#### Sélection de la portée
+
+Les deux collecteurs ont exactement la même structure. Pour chaque objet du pool,
+un appel virtuel `vtable+0x98` (`lwz 12,152(12)` puis `bctrl`, en `0x8026226c` et
+`0x802667d4`) renvoie un état, et cet état choisit la portée :
+
+| | retour != 0 | retour == 0 |
+|---|---|---|
+| obus, `0x8026227c` `bf CR0[EQ]` | `M+0x2C` = champ 16 = 120 partout | `M+0x30` = champ 18 |
+| mines, `0x802667e4` `bf CR0[EQ]` | `M+0x34` = champ 15 = 120, Yellow 130 | `M+0x38` = champ 17 |
+
+Champ 18 : Player 60, Ash/Teal/Red/Yellow/White 40, Purple 60, Black 100,
+Brown/Green 0. Champ 17 : Player 120, Yellow/Purple/White 160, et **0** pour Ash,
+Teal, Red et Black — ces quatre-là ignorent les mines dans l'état « retour 0 ».
+
+Gardes et acceptation :
+
+- Si les deux portées valent 0, le scan est sauté d'emblée (`0x802621d4` puis
+  `0x80262240`/`0x80262248` pour les obus, `0x802667ac`..`0x802667b4` pour les
+  mines). Brown et Green tombent là-dedans.
+- Si la portée retenue vaut 0, l'objet est sauté (`0x8026228c` `fcmpu 0,29,28`
+  puis `bt`, et `0x802667f4` `fcmpu 0,31,27` puis `bt`).
+- Distance : `bl 0x800e82e0` rend la longueur, puis `fcmpo` contre la portée et
+  `bf CR0[LT]` rejette (`0x80262350`/`0x80262354`, `0x80266858`/`0x8026685c`).
+  Accepté seulement si `distance < portée`.
+- Obus seulement : `0x80262370` `ps_sum0` termine un produit scalaire en
+  paired-single, `0x80262374` le compare à 0 et `0x80262378` `bf CR0[GT]` rejette.
+  Un obus qui s'éloigne n'est pas retenu.
+
+#### L'insertion
+
+Deux aides séparées, appelées avec M :
+
+| tableau | aide | compte | plafond |
+|---|---|---|---|
+| A, obus, 44 octets | `0x80269068..0x80269284` | `M+0xF4` (`lwz 7,244(3)`) | 4, forcé en `0x80269278` |
+| B, mines, 28 octets | `0x80268ec8..0x80269064` | `M+0x168` (`lwz 4,360(3)`) | 4, forcé en `0x8026905c` |
+
+Les deux font `addi 0,compte,1`, `cmpwi 0,4`, `bclr` sur GT puis réécrivent 4 :
+le compte sature à 4, il ne déborde pas.
