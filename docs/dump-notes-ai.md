@@ -512,3 +512,43 @@ refuse la détente tant que le canon lui-même ne tient pas la solution. C'est u
 divergence assumée, pas une extraction : notre tourelle pivote lentement
 (`turretSlewTan`) alors que la décision de tir se prenait sur la solution visée,
 si bien que le char tirait dans le mur d'à côté puis se prenait le retour.
+
+## La décision de déplacement est une machine à trois états (0x8026995c..0x80269b10)
+
+Le corps ne tourne qu'à l'expiration de `[M+0x1FC]`. Il ne lit aucun des
+paramètres de distance lui-même : il vide deux tableaux de candidats, laisse deux
+collecteurs les remplir, puis choisit un état.
+
+1. `0x80269974..0x802699d4` : boucle de 4 tours, borne immédiate 4 (pas
+   `[M+0x40]`), pas de 44 octets (`addi 6,6,44` en `0x802699d0`). Elle remet à
+   zéro le tableau `M+0x44`, en écrivant le vecteur nul de `0x80453510`.
+   `0x80269964` met le compte `[M+0xF4]` à zéro.
+2. `0x802699e0` : `bl 0x80262134` avec `r3 = [r13-25024]`, `r4 = M`.
+3. `0x802699fc..0x80269a40` : même boucle de 4 tours pour le tableau `M+0xF8`,
+   pas de 28 octets. `0x802699ec` met le compte `[M+0x168]` à zéro.
+4. `0x80269a4c` : `bl 0x802666b4` avec `r3 = [r13-24992]`, `r4 = M`.
+
+Puis le choix, rangé dans `[M+0x200]` :
+
+| Condition | État |
+|---|---|
+| `[M+0x1F9] != 0` (`lbz` en `0x80269a50`) | 2, écrit en `0x80269a64` |
+| sinon `[M+0xF4] > 0` (`bt CR0[GT]` en `0x80269a90`) | 1, écrit en `0x80269aa8` |
+| sinon `[M+0x168] > 0` (`bf CR0[GT]` en `0x80269a9c`) | 1 |
+| sinon | 0, écrit en `0x80269ad4` |
+
+Les trois bras appellent `0x80268d04` avec `r3 = [[M+0x208]+0x198]`, `r4 = 2`,
+`r5 = 1` pour les états 2 et 1 et `r5 = 0` pour l'état 0 — mais seulement si
+`[M+0x3C]` (champ 19) est non nul (`bt CR0[EQ]` en `0x80269a6c` et `0x80269ab0`).
+`0x80268d04` est la même bascule d'entrée que la détente, avec un autre index :
+`r4 = 1` pour le tir, `r4 = 2` ici. Le champ 19 vaut 1 pour Player, Ash, Teal,
+Yellow, Purple et White, 0 pour Red et Black, donc il ouvre une seconde voie
+d'entrée pour ces chars-là seulement.
+
+Le corps n'interroge ni le terrain (`[r13-25032]`, `0x801bfd44`) ni la table
+d'entités (`[r13-25016]`). Les distances des champs 15..18 doivent donc être lues
+un cran plus bas, dans les deux collecteurs, qui reçoivent M en `r4`.
+
+**Ouvert** : ce que remplissent `0x80262134` (via `[r13-25024]`, entrées de 44
+octets) et `0x802666b4` (via `[r13-24992]`, entrées de 28 octets), et ce que fait
+l'état 0/1/2 en aval.
