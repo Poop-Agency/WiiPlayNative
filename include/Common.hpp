@@ -170,6 +170,25 @@ struct TankConfig {
     // is A+0x80, written at 0x8026cae8 by the aim callee, so this is the turret
     // and not the hull.  Every record carries it, the player's included.
     float turretSlewTan;   // fld 38 -> A+0x20   0x8026c104 lfs / 0x8026c1d4 stfs
+
+    // How far the tank looks for something to dodge, in original pixels.
+    //
+    // The movement object M gets these from the record at 0x80269d84: field 18 ->
+    // M+0x30 (0x80269e60 lfs / 0x80269f94 stfs) and field 17 -> M+0x38
+    // (0x80269e5c lfs / 0x80269f9c stfs).  The shell collector 0x80262134 and the
+    // mine collector 0x802666b4 each read one of two ranges depending on a
+    // virtual call at vtable+0x98 on the tracked object: non-zero takes field 16
+    // or 15, both a flat 120, and zero takes these.  We only model the zero case,
+    // because what that virtual call reports is not read yet.
+    //
+    // Acceptance is `distance < range` (0x80262350 fcmpo + 0x80262354 bf CR0[LT],
+    // and 0x80266858/0x8026685c for mines), and for shells also a paired-single
+    // dot product greater than zero at 0x80262374, so a shell already moving away
+    // is not tracked.  A zero range means the tank does not scan at all, which is
+    // how Brown and Green never dodge and how Ash, Teal, Red and Black ignore
+    // mines.
+    float shellTrackPx;    // fld 18 -> M+0x30   0x80269e60 lfs / 0x80269f94 stfs
+    float mineTrackPx;     // fld 17 -> M+0x38   0x80269e5c lfs / 0x80269f9c stfs
 };
 
 // Every stat below comes from TnkGameParam.bin. The record layout is proven by the
@@ -191,32 +210,32 @@ struct TankConfig {
 inline TankConfig GetTankConfig(TankType type) {
     switch (type) {
         case TankType::Player1:
-            return { type, "Player 1 (Blue)", { 50, 120, 220, 255 }, { 30, 30, 30, 255 }, { 70, 140, 240, 255 }, 6.75f, 5.0f, 5, 1, BULLET_SPEED_NORMAL, 2, false, false, 0, 0.10f, 40.0f, 4, 30, 45, 40, 60, 100.0f, 10.0f, 100.0f, 0.05f };
+            return { type, "Player 1 (Blue)", { 50, 120, 220, 255 }, { 30, 30, 30, 255 }, { 70, 140, 240, 255 }, 6.75f, 5.0f, 5, 1, BULLET_SPEED_NORMAL, 2, false, false, 0, 0.10f, 40.0f, 4, 30, 45, 40, 60, 100.0f, 10.0f, 100.0f, 0.05f, 60.0f, 120.0f };
         case TankType::Player2:
-            return { type, "Player 2 (Red)", { 220, 50, 50, 255 }, { 30, 30, 30, 255 }, { 240, 70, 70, 255 }, 6.75f, 5.0f, 5, 1, BULLET_SPEED_NORMAL, 2, false, false, 0, 0.10f, 40.0f, 4, 30, 45, 40, 60, 100.0f, 10.0f, 100.0f, 0.05f };
+            return { type, "Player 2 (Red)", { 220, 50, 50, 255 }, { 30, 30, 30, 255 }, { 240, 70, 70, 255 }, 6.75f, 5.0f, 5, 1, BULLET_SPEED_NORMAL, 2, false, false, 0, 0.10f, 40.0f, 4, 30, 45, 40, 60, 100.0f, 10.0f, 100.0f, 0.05f, 60.0f, 120.0f };
         case TankType::Player3:
-            return { type, "Player 3 (Green)", { 50, 200, 70, 255 }, { 30, 30, 30, 255 }, { 70, 220, 90, 255 }, 6.75f, 5.0f, 5, 1, BULLET_SPEED_NORMAL, 2, false, false, 0, 0.10f, 40.0f, 4, 30, 45, 40, 60, 100.0f, 10.0f, 100.0f, 0.05f };
+            return { type, "Player 3 (Green)", { 50, 200, 70, 255 }, { 30, 30, 30, 255 }, { 70, 220, 90, 255 }, 6.75f, 5.0f, 5, 1, BULLET_SPEED_NORMAL, 2, false, false, 0, 0.10f, 40.0f, 4, 30, 45, 40, 60, 100.0f, 10.0f, 100.0f, 0.05f, 60.0f, 120.0f };
         case TankType::Player4:
-            return { type, "Player 4 (Yellow)", { 230, 200, 40, 255 }, { 30, 30, 30, 255 }, { 250, 220, 60, 255 }, 6.75f, 5.0f, 5, 1, BULLET_SPEED_NORMAL, 2, false, false, 0, 0.10f, 40.0f, 4, 30, 45, 40, 60, 100.0f, 10.0f, 100.0f, 0.05f };
+            return { type, "Player 4 (Yellow)", { 230, 200, 40, 255 }, { 30, 30, 30, 255 }, { 250, 220, 60, 255 }, 6.75f, 5.0f, 5, 1, BULLET_SPEED_NORMAL, 2, false, false, 0, 0.10f, 40.0f, 4, 30, 45, 40, 60, 100.0f, 10.0f, 100.0f, 0.05f, 60.0f, 120.0f };
         
         case TankType::EnemyBrown:
-            return { type, "Brown Tank", { 160, 110, 70, 255 }, { 60, 50, 40, 255 }, { 180, 130, 90, 255 }, 0.0f, 2.5f, 1, 1, BULLET_SPEED_NORMAL, 0, false, false, 100, 5.00f, 170.0f, 60, 30, 45, 0, 0, 100.0f, 0.0f, 0.0f, 0.01f };
+            return { type, "Brown Tank", { 160, 110, 70, 255 }, { 60, 50, 40, 255 }, { 180, 130, 90, 255 }, 0.0f, 2.5f, 1, 1, BULLET_SPEED_NORMAL, 0, false, false, 100, 5.00f, 170.0f, 60, 30, 45, 0, 0, 100.0f, 0.0f, 0.0f, 0.01f, 0.0f, 0.0f };
         case TankType::EnemyAsh:
-            return { type, "Ash Tank", { 160, 160, 160, 255 }, { 50, 50, 50, 255 }, { 180, 180, 180, 255 }, 4.5f, 3.0f, 1, 1, BULLET_SPEED_NORMAL, 0, false, false, 200, 3.00f, 40.0f, 45, 30, 45, 0, 0, 100.0f, 0.0f, 0.0f, 0.01f };
+            return { type, "Ash Tank", { 160, 160, 160, 255 }, { 50, 50, 50, 255 }, { 180, 180, 180, 255 }, 4.5f, 3.0f, 1, 1, BULLET_SPEED_NORMAL, 0, false, false, 200, 3.00f, 40.0f, 45, 30, 45, 0, 0, 100.0f, 0.0f, 0.0f, 0.01f, 40.0f, 0.0f };
         case TankType::EnemyTeal:
-            return { type, "Teal Tank", { 40, 190, 190, 255 }, { 30, 60, 60, 255 }, { 60, 210, 210, 255 }, 3.75f, 5.0f, 1, 0, BULLET_SPEED_FAST, 0, true, false, 300, 3.00f, 0.0f, 8, 5, 10, 0, 0, 100.0f, 0.0f, 0.0f, 0.05f };
+            return { type, "Teal Tank", { 40, 190, 190, 255 }, { 30, 60, 60, 255 }, { 60, 210, 210, 255 }, 3.75f, 5.0f, 1, 0, BULLET_SPEED_FAST, 0, true, false, 300, 3.00f, 0.0f, 8, 5, 10, 0, 0, 100.0f, 0.0f, 0.0f, 0.05f, 40.0f, 0.0f };
         case TankType::EnemyYellow:
-            return { type, "Yellow Tank", { 230, 210, 50, 255 }, { 60, 60, 20, 255 }, { 250, 230, 70, 255 }, 6.75f, 4.5f, 1, 1, BULLET_SPEED_NORMAL, 4, false, false, 400, 3.00f, 40.0f, 30, 30, 45, 40, 60, 100.0f, 50.0f, 50.0f, 0.02f };
+            return { type, "Yellow Tank", { 230, 210, 50, 255 }, { 60, 60, 20, 255 }, { 250, 230, 70, 255 }, 6.75f, 4.5f, 1, 1, BULLET_SPEED_NORMAL, 4, false, false, 400, 3.00f, 40.0f, 30, 30, 45, 40, 60, 100.0f, 50.0f, 50.0f, 0.02f, 40.0f, 160.0f };
         case TankType::EnemyRed:
-            return { type, "Red Tank", { 210, 50, 50, 255 }, { 50, 20, 20, 255 }, { 230, 70, 70, 255 }, 4.5f, 3.5f, 3, 1, BULLET_SPEED_NORMAL, 0, false, false, 500, 0.50f, 40.0f, 20, 5, 10, 0, 0, 100.0f, 0.0f, 0.0f, 0.02f };
+            return { type, "Red Tank", { 210, 50, 50, 255 }, { 50, 20, 20, 255 }, { 230, 70, 70, 255 }, 4.5f, 3.5f, 3, 1, BULLET_SPEED_NORMAL, 0, false, false, 500, 0.50f, 40.0f, 20, 5, 10, 0, 0, 100.0f, 0.0f, 0.0f, 0.02f, 40.0f, 0.0f };
         case TankType::EnemyGreen:
-            return { type, "Green Tank", { 50, 180, 60, 255 }, { 20, 50, 20, 255 }, { 70, 200, 80, 255 }, 0.0f, 4.0f, 2, 2, BULLET_SPEED_FAST, 0, true, false, 600, 1.00f, 80.0f, 30, 5, 10, 0, 0, 100.0f, 0.0f, 0.0f, 0.02f };
+            return { type, "Green Tank", { 50, 180, 60, 255 }, { 20, 50, 20, 255 }, { 70, 200, 80, 255 }, 0.0f, 4.0f, 2, 2, BULLET_SPEED_FAST, 0, true, false, 600, 1.00f, 80.0f, 30, 5, 10, 0, 0, 100.0f, 0.0f, 0.0f, 0.02f, 0.0f, 0.0f };
         case TankType::EnemyPurple:
-            return { type, "Purple Tank", { 170, 60, 200, 255 }, { 40, 20, 50, 255 }, { 190, 80, 220, 255 }, 6.75f, 4.0f, 5, 1, BULLET_SPEED_NORMAL, 2, false, false, 700, 0.50f, 40.0f, 20, 5, 10, 40, 60, 100.0f, 3.0f, 5.0f, 0.03f };
+            return { type, "Purple Tank", { 170, 60, 200, 255 }, { 40, 20, 50, 255 }, { 190, 80, 220, 255 }, 6.75f, 4.0f, 5, 1, BULLET_SPEED_NORMAL, 2, false, false, 700, 0.50f, 40.0f, 20, 5, 10, 40, 60, 100.0f, 3.0f, 5.0f, 0.03f, 60.0f, 160.0f };
         case TankType::EnemyWhite:
-            return { type, "White Tank", { 240, 240, 245, 255 }, { 80, 80, 80, 255 }, { 255, 255, 255, 255 }, 4.5f, 4.0f, 5, 1, BULLET_SPEED_FAST, 2, false, true, 800, 0.50f, 40.0f, 30, 5, 10, 40, 60, 100.0f, 3.0f, 5.0f, 0.03f };
+            return { type, "White Tank", { 240, 240, 245, 255 }, { 80, 80, 80, 255 }, { 255, 255, 255, 255 }, 4.5f, 4.0f, 5, 1, BULLET_SPEED_FAST, 2, false, true, 800, 0.50f, 40.0f, 30, 5, 10, 40, 60, 100.0f, 3.0f, 5.0f, 0.03f, 40.0f, 160.0f };
         case TankType::EnemyBlack:
-            return { type, "Black Tank", { 35, 35, 40, 255 }, { 15, 15, 15, 255 }, { 55, 55, 60, 255 }, 9.0f, 5.5f, 3, 0, BULLET_SPEED_FAST, 2, true, false, 1000, 1.00f, 5.0f, 20, 5, 10, 40, 60, 100.0f, 3.0f, 5.0f, 0.03f };
+            return { type, "Black Tank", { 35, 35, 40, 255 }, { 15, 15, 15, 255 }, { 55, 55, 60, 255 }, 9.0f, 5.5f, 3, 0, BULLET_SPEED_FAST, 2, true, false, 1000, 1.00f, 5.0f, 20, 5, 10, 40, 60, 100.0f, 3.0f, 5.0f, 0.03f, 100.0f, 0.0f };
     }
     return { TankType::EnemyBrown, "Unknown", WHITE, BLACK, WHITE, 2.0f, 2.0f, 1, 1, 8.0f, 0, false, false, 100, 1.0f };
 }

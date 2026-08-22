@@ -154,16 +154,23 @@ bool AIManager::FindBankShot(const Tank& enemy, Vector2 targetPos, const Level& 
     return false;
 }
 
+// Who dodges and how far they look is no longer a hand-written list of "elite"
+// tanks with a 7.0 radius. The range is record field 18 in pixels -- see
+// shellTrackPx in Common.hpp for the addresses -- and a zero range means the
+// tank does not scan at all, which is exactly Brown and Green.
 Vector2 AIManager::FindDodgeVector(const Tank& enemy, const BulletManager& bullets) {
     Vector2 myPos = enemy.GetPosition();
     Vector2 dodgeVec = { 0.0f, 0.0f };
+
+    float range = enemy.GetConfig().shellTrackPx * CELL_SIZE / 32.0f;
+    if (range <= 0.0f) return dodgeVec;
 
     for (const auto& b : bullets.GetBullets()) {
         if (!b.active || b.ownerId == enemy.GetId()) continue;
 
         Vector2 toTank = { myPos.x - b.position.x, myPos.y - b.position.y };
         float dist = Vector2Length(toTank);
-        if (dist > 7.0f || dist < 0.1f) continue;
+        if (dist >= range || dist < 0.1f) continue;
 
         Vector2 bulletDir = { b.velocity.x / b.speed, b.velocity.y / b.speed };
         float dot = toTank.x * bulletDir.x + toTank.y * bulletDir.y;
@@ -354,8 +361,9 @@ void AIManager::UpdateEnemy(Tank& enemy, AIState& state, float dt,
     state.moveTimer -= dt;
     Vector2 moveDir = { 0.0f, 0.0f };
 
-    // Check bullet dodging first (Elite tanks: Black, Teal, Purple, White)
-    if (enemy.GetType() == TankType::EnemyBlack || enemy.GetType() == TankType::EnemyTeal || enemy.GetType() == TankType::EnemyWhite) {
+    // Dodging comes first, and every tank with a non-zero field 18 does it, not
+    // a hand-picked four. FindDodgeVector returns nothing when the range is zero.
+    {
         Vector2 dodge = FindDodgeVector(enemy, bullets);
         if (Vector2Length(dodge) > 0.1f) {
             moveDir = dodge;

@@ -18,4 +18,5 @@ run test_missions src/Level.cpp
 run test_holes    src/Level.cpp
 run test_shotgate src/AI.cpp src/Tank.cpp src/Level.cpp src/Particle.cpp src/Bullet.cpp src/Mine.cpp $LIB
 run test_turret   src/Tank.cpp src/Level.cpp src/Particle.cpp src/Bullet.cpp src/Mine.cpp $LIB
+run test_dodge     src/AI.cpp src/Tank.cpp src/Level.cpp src/Particle.cpp src/Bullet.cpp src/Mine.cpp $LIB
 run test_aicadence src/AI.cpp src/Tank.cpp src/Level.cpp src/Particle.cpp src/Bullet.cpp src/Mine.cpp $LIB
