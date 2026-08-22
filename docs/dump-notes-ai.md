@@ -552,3 +552,33 @@ un cran plus bas, dans les deux collecteurs, qui reçoivent M en `r4`.
 **Ouvert** : ce que remplissent `0x80262134` (via `[r13-25024]`, entrées de 44
 octets) et `0x802666b4` (via `[r13-24992]`, entrées de 28 octets), et ce que fait
 l'état 0/1/2 en aval.
+
+### L'état choisi appelle un des trois gestionnaires de déplacement
+
+`0x80269ae8` relit `[M+0x200]`, fait `mulli 0,0,12`, `add 4,29,0`,
+`addi 12,4,524` et appelle `0x800b2150` — le thunk PTMF de CodeWarrior, qui prend
+en `r12` un descripteur de 12 octets. Donc `M+0x20C + 12*état` est un
+pointeur-sur-membre, `r3 = M`.
+
+Les trois descripteurs sont recopiés en `0x8026b184..0x8026b1c0` depuis la table
+statique `0x803764F8`, chargée en `0x8026b118` (`lis 31,0x8037` / `addi
+31,31,25848`). Contenu de la table :
+
+| état | descripteur | fonction |
+|---|---|---|
+| 0 | `0x803764F8` `00000000 ffffffff 8026a75c` | `0x8026a75c..0x8026ad50`, 382 instructions |
+| 1 | `0x80376504` `00000000 ffffffff 8026a300` | `0x8026a300..0x8026a758`, 279 instructions |
+| 2 | `0x80376510` `00000000 ffffffff 8026a1c8` | `0x8026a1c8..0x8026a2fc`, 78 instructions |
+
+Le `ffffffff` en deuxième mot est la marque d'un appel non virtuel, donc ce sont
+bien ces trois adresses-là qui tournent.
+
+Juste après le gestionnaire, `0x80269b04` normalise le vecteur `M+0x1DC`
+(`bl 0x800e829c`) et `0x80269b20` fait son produit vectoriel avec la constante
+`0x80453510` pour ranger la perpendiculaire en `M+0x1E8` (`bl 0x800e8344`). Le
+gestionnaire écrit donc une direction dans `M+0x1DC` : c'est la direction de
+déplacement choisie.
+
+Au passage, `0x8026b13c..0x8026b154` : le vptr de M est `0x8037651C`, et l'objet
+IA A est un membre alloué à part — `li 3,320` puis `bl 0x800a39f8`, constructeur
+`0x8026bb00`, rangé en `M+0x204`.
