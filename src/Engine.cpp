@@ -113,6 +113,13 @@ void Engine::Run() {
     // Smoke test hook: WII_TANKS_SHOT=path renders that many frames, writes a
     // screenshot and quits. Building is not evidence that anything draws, and
     // this is the cheapest way to look at the real frame.
+    // WII_TANKS_MISSION=N drops straight into that mission, so the smoke test
+    // can look at the board instead of the title screen.
+    if (const char* m = getenv("WII_TANKS_MISSION")) {
+        m_gameState.StartMission(atoi(m), false);
+        m_gameState.SetScreen(GameScreen::Playing);
+    }
+
     const char* shot = getenv("WII_TANKS_SHOT");
     int shotAfter = shot ? (getenv("WII_TANKS_SHOT_FRAMES")
                             ? atoi(getenv("WII_TANKS_SHOT_FRAMES")) : 90) : -1;
