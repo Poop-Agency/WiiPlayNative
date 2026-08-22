@@ -582,3 +582,31 @@ déplacement choisie.
 Au passage, `0x8026b13c..0x8026b154` : le vptr de M est `0x8037651C`, et l'objet
 IA A est un membre alloué à part — `li 3,320` puis `bl 0x800a39f8`, constructeur
 `0x8026bb00`, rangé en `M+0x204`.
+
+### État 2 : l'esquive (`0x8026a1c8..0x8026a2fc`)
+
+`r31 = M`.
+
+1. `0x8026a1f8..0x8026a234` : boucle de `[M+0x40]` tours (champ 21, 4 partout ;
+   la borne est vraiment lue en `0x8026a1e4`, contrairement aux boucles du tick
+   qui ont un 4 immédiat). Elle additionne des vec3 pris en `M+0x17C + 12*i`
+   (`lfs 0,380(4)` / `384(4)` / `388(4)`, `addi 4,4,12`) dans un accumulateur de
+   pile. C'est donc un tableau de 4 vecteurs d'évitement.
+2. `0x8026a23c` : `bl 0x800e82e0` rend la longueur de la somme. Si elle est non
+   nulle, `0x8026a254` normalise et le résultat va en `M+0x1DC` ; sinon
+   `0x8026a274` recopie tel quel le premier vecteur `M+0x17C`. Dans les deux cas
+   `M+0x1DC` est la direction de déplacement, celle que le tick normalise ensuite.
+3. `0x8026a294` : `[M+0x1F8] = 1`.
+4. `0x8026a298` : si le compte `[M+0x168]` est nul, `[M+0x1F9] = 0` et retour —
+   l'état 2 se désarme.
+5. Sinon `0x8026a2ac..0x8026a2d8` parcourt les 4 entrées de 28 octets du tableau
+   B (`M+0xF8`, `addi 3,3,28`) et lit le flottant à `+0x0C` de chaque entrée
+   (`lfs 1,260(3)` au premier tour). `fcmpo` contre la constante sda2
+   `0x8045b9b0` = 16, `bf CR0[LT]` : le drapeau local ne passe à 1 que pour une
+   entrée **strictement inférieure à 16**. Si aucune ne l'est, `0x8026a2e8`
+   remet `[M+0x1F9]` à 0.
+
+Donc l'état 2 est l'esquive : le char part le long de la somme des vecteurs
+d'évitement et y reste tant qu'une entrée du tableau B est sous 16. L'unité de ce
+16 n'est pas encore fixée — 16 px est un demi-bloc, mais ça peut aussi être un
+compte à rebours en frames.
