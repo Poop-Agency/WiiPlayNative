@@ -81,16 +81,24 @@ void Tank::Update(float dt, Level& level, ParticleManager& particles) {
         m_stealthAlpha = 1.0f;
     }
 
-    // Turret aiming towards target. The barrel does not snap: 0x8026bbac builds
-    // fwd +- turretSlewTan * right and 0x801b6ab0 keeps the step or the target,
-    // whichever already points closer, so the swing is clamped to one cone per
-    // frame at 60 Hz. See turretSlewTan in Common.hpp.
+    // Turret aiming towards target. An enemy barrel does not snap: 0x8026bbac
+    // builds fwd +- turretSlewTan * right and 0x801b6ab0 keeps the step or the
+    // target, whichever already points closer, so the swing is clamped to one
+    // cone per frame at 60 Hz. See turretSlewTan in Common.hpp.
+    //
+    // A player's barrel is not driven by that tick. Two Dolphin dumps 29 frames
+    // apart show it turning 155 deg, while the 0.05 cap would allow 83 deg and
+    // the player's own A+0x8C never moved. No other limit has been found.
+    // ponytail: follows the cursor outright; a one-frame dump pair would pin a
+    // rate if the game has one above 5.35 deg/frame.
     Vector2 toTarget = { aimTarget.x - m_position.x, aimTarget.y - m_position.y };
     float targetTurretAngle = std::atan2(toTarget.y, toTarget.x);
     float turretDiff = NormalizeAngle(targetTurretAngle - m_turretAngle);
-    float maxSwing = std::atan(m_config.turretSlewTan) * 60.0f * dt;
-    if (turretDiff > maxSwing) turretDiff = maxSwing;
-    else if (turretDiff < -maxSwing) turretDiff = -maxSwing;
+    if (!isHuman) {
+        float maxSwing = std::atan(m_config.turretSlewTan) * 60.0f * dt;
+        if (turretDiff > maxSwing) turretDiff = maxSwing;
+        else if (turretDiff < -maxSwing) turretDiff = -maxSwing;
+    }
     m_turretAngle = NormalizeAngle(m_turretAngle + turretDiff);
 
     // Chassis movement

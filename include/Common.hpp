@@ -168,7 +168,9 @@ struct TankConfig {
     // arguments has the larger dot product with its second, so the pair is a
     // rotate-toward clamped to the cone.  The target direction it turns toward
     // is A+0x80, written at 0x8026cae8 by the aim callee, so this is the turret
-    // and not the hull.  Every record carries it, the player's included.
+    // and not the hull.  Every record carries it, the player's included, but a
+    // player's barrel ignores it: it turned 155 deg in 29 frames between two
+    // dumps, past the 83 deg this cap allows, while its A+0x8C stayed put.
     float turretSlewTan;   // fld 38 -> A+0x20   0x8026c104 lfs / 0x8026c1d4 stfs
 
     // How far the tank looks for something to dodge, in original pixels.

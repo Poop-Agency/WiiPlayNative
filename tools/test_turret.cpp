@@ -1,4 +1,5 @@
-// The barrel may not swing faster than one turretSlewTan cone per 60 Hz frame.
+// An enemy barrel may not swing faster than one turretSlewTan cone per 60 Hz
+// frame; a player's barrel follows the cursor at once.
 // Build:
 //   g++ -std=c++17 -Iinclude -Ibuild/_deps/raylib-src/src tools/test_turret.cpp \
 //       src/Tank.cpp src/Level.cpp src/Particle.cpp -o /tmp/test_turret \
@@ -26,8 +27,21 @@ int main() {
     const Case cases[] = {
         { TankType::EnemyBrown, 0.01f, "Brown" },
         { TankType::EnemyBlack, 0.03f, "Black" },
-        { TankType::Player1,    0.05f, "Player 1" },
     };
+
+    {
+        Tank p(1, TankType::Player1, { 0.0f, 0.0f });
+        p.isHuman = true;
+        p.SetTurretAngle(0.0f);
+        p.aimTarget = { -100.0f, 0.0f };
+        p.Update(dt, level, particles);
+        if (std::fabs(Wrap(p.GetTurretAngle() - PI)) > 1e-4f) {
+            printf("Player 1: barrel at %.5f rad after one frame, cursor at pi\n",
+                   p.GetTurretAngle());
+            return 1;
+        }
+        printf("Player 1: half turn in 1 frame\n");
+    }
 
     for (const Case& c : cases) {
         Tank t(1, c.type, { 0.0f, 0.0f });
