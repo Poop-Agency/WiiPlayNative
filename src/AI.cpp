@@ -206,16 +206,30 @@ void AIManager::Update(float dt, std::vector<Tank>& tanks, Level& level,
                        const BulletManager& bullets, MineManager& mines) 
 {
     if (m_states.size() < tanks.size()) {
+        const size_t first = m_states.size();
         m_states.resize(tanks.size());
+        // 0x8026be50 rolls both decision timers when a tank's AI is set up, fire
+        // first, then mine.
+        for (size_t i = first; i < tanks.size(); ++i) {
+            const TankConfig& cfg = tanks[i].GetConfig();
+            m_states[i].fireFrames = RollDecisionFrames(cfg.fireDecisionMin, cfg.fireDecisionMax, m_rng);
+            m_states[i].mineFrames = RollDecisionFrames(cfg.mineDecisionMin, cfg.mineDecisionMax, m_rng);
+        }
     }
+
+    // The original counts whole 60 Hz frames; carry the fraction so a variable dt
+    // neither drops nor adds decisions.
+    m_frameCarry += dt * 60.0f;
+    const int frames = static_cast<int>(m_frameCarry);
+    m_frameCarry -= static_cast<float>(frames);
 
     for (size_t i = 0; i < tanks.size(); ++i) {
         if (tanks[i].isHuman || !tanks[i].IsAlive()) continue;
-        UpdateEnemy(tanks[i], m_states[i], dt, tanks, level, bullets, mines);
+        UpdateEnemy(tanks[i], m_states[i], dt, frames, tanks, level, bullets, mines);
     }
 }
 
-void AIManager::UpdateEnemy(Tank& enemy, AIState& state, float dt, 
+void AIManager::UpdateEnemy(Tank& enemy, AIState& state, float dt, int frames,
                             const std::vector<Tank>& tanks, Level& level, 
                             const BulletManager& bullets, MineManager& mines) 
 {
@@ -327,34 +341,36 @@ void AIManager::UpdateEnemy(Tank& enemy, AIState& state, float dt,
     }
     if (state.hasAim) enemy.aimTarget = state.heldAim;
 
+    // [A+0x110] decides when to consider firing. It counts down once per frame and,
+    // on the frame it expires, reloads to min + draw % (max - min) from record
+    // fields 35 and 34 (0x8026bd14) whether or not a shot follows: the guard on the
+    // weapon reload only skips the callee. Brown decides every 30-45 frames, Black
+    // every 5-10. tools/test_oracle_timers.cpp checks the reload against the game.
+    const TankConfig& fireCfg = enemy.GetConfig();
+    bool decides = false;
+    for (int f = 0; f < frames; ++f) {
+        if (--state.fireFrames > 0) continue;
+        decides = true;
+        state.fireFrames = RollDecisionFrames(fireCfg.fireDecisionMin, fireCfg.fireDecisionMax, m_rng);
+    }
+
     // The barrel has the last word: canShoot only says a solution exists, and the
     // turret may still be swinging toward it. See ShotIsClear.
-    if (canShoot && state.shootTimer <= 0.0f && ShotIsClear(enemy, predictedPlayerPos, level)) {
-        enemy.shootRequested = true;
-
-        // Cooldowns come from TnkGameParam.bin (col 37, frames at 60 Hz), with a small
-        // jitter so a pack of identical tanks does not fire in lockstep.
-        float cooldown = enemy.GetConfig().shootCooldown;
-
-        if (enemy.GetType() == TankType::EnemyGreen) {
-            // Green fires its two shots back to back, then waits out the full cooldown
+    if (enemy.GetType() == TankType::EnemyGreen) {
+        // Green fires its two shots back to back, then waits out the full cooldown.
+        // Still ours: this burst predates the decision timer and is not read yet.
+        if (canShoot && state.shootTimer <= 0.0f && ShotIsClear(enemy, predictedPlayerPos, level)) {
+            enemy.shootRequested = true;
             state.burstCount++;
             if (state.burstCount < 2) {
                 state.shootTimer = 0.15f;
             } else {
                 state.burstCount = 0;
-                state.shootTimer = cooldown;
+                state.shootTimer = fireCfg.shootCooldown;
             }
-        } else {
-            // The original does not jitter a cooldown. Its fire timer [A+0x110]
-            // is re-rolled as min + rand % (max - min) in frames, from record
-            // fields 35 and 34 (reload at 0x8026bd14, bounds read at 0x8026bd50).
-            // Brown waits 30-45 frames between decisions, Black 5-10.
-            const TankConfig& cfg = enemy.GetConfig();
-            int span = cfg.fireDecisionMax - cfg.fireDecisionMin;
-            int frames = cfg.fireDecisionMin + (span > 0 ? rand() % span : 0);
-            state.shootTimer = frames / 60.0f;
         }
+    } else if (decides && canShoot && ShotIsClear(enemy, predictedPlayerPos, level)) {
+        enemy.shootRequested = true;
     }
 
     // 2. MOVEMENT & NAVIGATION
@@ -446,17 +462,15 @@ void AIManager::UpdateEnemy(Tank& enemy, AIState& state, float dt,
     // boolean returned by 0x80261c14 (tested at 0x8026c680); until that function
     // is read, take the lower, commoner one.
     const TankConfig& mineCfg = enemy.GetConfig();
-    if (mineCfg.maxMines > 0 && mineCfg.mineDecisionMax > 0) {
-        state.mineTimer -= dt;
-        if (state.mineTimer <= 0.0f) {
-            float rangeWorld = mineCfg.mineRangePx * CELL_SIZE / 32.0f;
-            if (closestDist < rangeWorld &&
-                (rand() % 100) <= (int)mineCfg.mineChanceFar) {
-                enemy.mineRequested = true;
-            }
-            int span = mineCfg.mineDecisionMax - mineCfg.mineDecisionMin;
-            state.mineTimer = (mineCfg.mineDecisionMin + (span > 0 ? rand() % span : 0)) / 60.0f;
+    for (int f = 0; f < frames; ++f) {
+        if (--state.mineFrames > 0) continue;
+        float rangeWorld = mineCfg.mineRangePx * CELL_SIZE / 32.0f;
+        if (mineCfg.maxMines > 0 && closestDist < rangeWorld &&
+            (rand() % 100) <= (int)mineCfg.mineChanceFar) {
+            enemy.mineRequested = true;
         }
+        // Every tank reloads, mines or not (0x8026bd98); see RollDecisionFrames.
+        state.mineFrames = RollDecisionFrames(mineCfg.mineDecisionMin, mineCfg.mineDecisionMax, m_rng);
     }
 
     float moveLen = Vector2Length(moveDir);

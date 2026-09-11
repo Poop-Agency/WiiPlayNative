@@ -117,7 +117,11 @@ combined, not the single LCG usually assumed:
 
     LCG   : [r13-25800] = [r13-25800] * 0x41C64E6D + 12345
     LFSR  : x = [r13-25796]; if (x & 1) x ^= 0x00011020; x >>= 1; [r13-25796] = x
-    out   : (LCG ^ LFSR) & 0xFFFF
+    out   : ((LCG ^ LFSR) >> 4) & 0xFFFF   (rlwinm 3,0,28,16,31 at 0x8026bcfc)
+
+Earlier notes had `& 0xFFFF` without the shift. Running the tick on a Dolphin
+dump settled it: all 55 fire-timer reloads in 2000 frames match the shifted
+form and none match the other (`tools/test_oracle_timers.cpp`).
 
 `0x41C64E6D` is built with `lis 0x41C6` + `addi 0x4E6D`, which is why searching
 `mulli` for LCG multipliers found nothing.
@@ -138,6 +142,11 @@ The decrement-and-fire shape at `0x8026bd18`:
     addic. 0, 3, -1
     stw 0, 280(30)
     bt 1, .+120         ; still > 0 -> done
+
+The reload runs on every expiry, whether or not the guard (`[A+0x70]`,
+`[A+0x74]`) let the callee run: the guard's `bf` only skips the `bl`. A zero
+span still draws, and `divw` then `mullw` by that zero leaves the raw draw,
+so a tank without mines reloads `[A+0x118]` to up to 65535 frames.
 
 This is not a fixed cooldown with jitter. It is a uniform draw over a
 per-tank frame range taken from the parameter record.
